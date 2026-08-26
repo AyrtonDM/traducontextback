@@ -21,6 +21,9 @@ class Configuracion(BaseSettings):
     db_password: str
     db_echo: bool
 
+    api_key_resend: str
+    correo_remitente: str
+
     model_config = SettingsConfigDict(
         env_file=RUTA_BASE / ".env",
         env_file_encoding="utf-8",
