@@ -46,3 +46,8 @@ class Usuario(Base):
         back_populates="usuario",
         cascade="all, delete-orphan",
     )
+    sesiones = relationship(
+        "Sesion",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+    )

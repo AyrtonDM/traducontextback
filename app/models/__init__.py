@@ -1,4 +1,4 @@
-from app.models.usuario import CodigoVerificacion, Permiso, Rol, RolPermiso, Usuario
+from app.models.usuario import CodigoVerificacion, Permiso, Rol, RolPermiso, Usuario, Sesion
 
 
 __all__ = [
@@ -7,4 +7,5 @@ __all__ = [
     "Rol",
     "RolPermiso",
     "Usuario",
+    "Sesion",
 ]
