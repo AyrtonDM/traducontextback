@@ -21,8 +21,11 @@ class Configuracion(BaseSettings):
     db_password: str
     db_echo: bool
 
-    api_key_resend: str
-    correo_remitente: str
+    gmail_host: str
+    gmail_port: int
+    gmail_usuario: str
+    gmail_password: str
+    gmail_remitente: str
 
     model_config = SettingsConfigDict(
         env_file=RUTA_BASE / ".env",

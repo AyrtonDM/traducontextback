@@ -1,12 +1,8 @@
+from email.message import EmailMessage
+from smtplib import SMTP, SMTPException
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
-import json
 
 from app.core.configuracion import configuracion
-
-
-RESEND_EMAILS_URL = "https://api.resend.com/emails"
 
 
 class CorreoNoConfiguradoError(RuntimeError):
@@ -14,7 +10,7 @@ class CorreoNoConfiguradoError(RuntimeError):
 
 
 class EnvioCorreoError(RuntimeError):
-    """Error lanzado cuando Resend no acepta el envio del correo."""
+    """Error lanzado cuando Gmail no permite enviar el correo."""
 
 
 def enviar_correo(
@@ -29,63 +25,116 @@ def enviar_correo(
     encabezados: dict[str, str] | None = None,
     etiquetas: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
-    """Envia un correo usando Resend.
+    """Envia un correo usando Gmail SMTP.
 
     Sirve para correos informativos, codigos de verificacion,
     recuperacion de cuentas y notificaciones futuras.
     """
 
-    if not configuracion.api_key_resend:
-        raise CorreoNoConfiguradoError("Falta configurar API_KEY_RESEND.")
+    validar_configuracion_gmail()
 
     if html is None and texto is None:
         raise ValueError("El correo debe incluir contenido html o texto.")
 
-    payload: dict[str, Any] = {
-        "from": configuracion.correo_remitente,
-        "to": destinatarios,
-        "subject": asunto,
-    }
+    destinatarios_lista = normalizar_destinatarios(destinatarios)
+    cc_lista = normalizar_destinatarios(cc)
+    bcc_lista = normalizar_destinatarios(bcc)
 
-    campos_opcionales = {
-        "html": html,
-        "text": texto,
-        "cc": cc,
-        "bcc": bcc,
-        "reply_to": responder_a,
-        "headers": encabezados,
-        "tags": etiquetas,
-    }
-
-    payload.update(
-        {
-            clave: valor
-            for clave, valor in campos_opcionales.items()
-            if valor is not None
-        }
-    )
-
-    solicitud = Request(
-        RESEND_EMAILS_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {configuracion.api_key_resend}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
+    mensaje = construir_mensaje(
+        destinatarios=destinatarios_lista,
+        asunto=asunto,
+        html=html,
+        texto=texto,
+        cc=cc_lista,
+        responder_a=responder_a,
+        encabezados=encabezados,
     )
 
     try:
-        with urlopen(solicitud, timeout=15) as respuesta:
-            cuerpo = respuesta.read().decode("utf-8")
-    except HTTPError as error:
-        detalle = error.read().decode("utf-8")
+        with SMTP(configuracion.gmail_host, configuracion.gmail_port, timeout=15) as smtp:
+            smtp.starttls()
+            smtp.login(configuracion.gmail_usuario, configuracion.gmail_password)
+            smtp.send_message(
+                mensaje,
+                to_addrs=destinatarios_lista + cc_lista + bcc_lista,
+            )
+    except (OSError, SMTPException) as error:
         raise EnvioCorreoError(
-            f"Resend rechazo el correo: {error.code} {detalle}"
-        ) from error
-    except URLError as error:
-        raise EnvioCorreoError(
-            f"No se pudo conectar con Resend: {error.reason}"
+            f"No se pudo enviar el correo con Gmail: {error}"
         ) from error
 
-    return json.loads(cuerpo) if cuerpo else {}
+    return {
+        "destinatarios": destinatarios_lista,
+        "cc": cc_lista,
+        "bcc": bcc_lista,
+        "etiquetas": etiquetas or [],
+    }
+
+
+def validar_configuracion_gmail() -> None:
+    campos_requeridos = {
+        "GMAIL_HOST": configuracion.gmail_host,
+        "GMAIL_PORT": configuracion.gmail_port,
+        "GMAIL_USUARIO": configuracion.gmail_usuario,
+        "GMAIL_PASSWORD": configuracion.gmail_password,
+        "GMAIL_REMITENTE": configuracion.gmail_remitente,
+    }
+
+    faltantes = [
+        nombre
+        for nombre, valor in campos_requeridos.items()
+        if valor is None or str(valor).strip() == ""
+    ]
+
+    if faltantes:
+        raise CorreoNoConfiguradoError(
+            f"Falta configurar: {', '.join(faltantes)}."
+        )
+
+
+def construir_mensaje(
+    *,
+    destinatarios: list[str],
+    asunto: str,
+    html: str | None,
+    texto: str | None,
+    cc: list[str],
+    responder_a: str | list[str] | None,
+    encabezados: dict[str, str] | None,
+) -> EmailMessage:
+    mensaje = EmailMessage()
+    mensaje["From"] = configuracion.gmail_remitente
+    mensaje["To"] = ", ".join(destinatarios)
+    mensaje["Subject"] = asunto
+
+    if cc:
+        mensaje["Cc"] = ", ".join(cc)
+
+    if responder_a:
+        mensaje["Reply-To"] = ", ".join(normalizar_destinatarios(responder_a))
+
+    if encabezados:
+        for nombre, valor in encabezados.items():
+            mensaje[nombre] = valor
+
+    if texto:
+        mensaje.set_content(texto)
+    else:
+        mensaje.set_content("Este correo contiene contenido HTML.")
+
+    if html:
+        mensaje.add_alternative(html, subtype="html")
+
+    return mensaje
+
+
+def normalizar_destinatarios(
+    destinatarios: str | list[str] | None,
+) -> list[str]:
+    if destinatarios is None:
+        return []
+
+    if isinstance(destinatarios, str):
+        return [destinatarios]
+
+    return destinatarios

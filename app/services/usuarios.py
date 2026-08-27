@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session
 from app.models.usuario.codigo_verificacion import CodigoVerificacion
 from app.models.usuario.rol import Rol
 from app.models.usuario.usuario import Usuario
-from app.schemas.usuario import RegistroUsuarioSolicitud, VerificarCodigoSolicitud
+from app.schemas.usuario import (
+    ReenviarCodigoSolicitud,
+    RegistroUsuarioSolicitud,
+    VerificarCodigoSolicitud,
+)
 from app.utilities.correo import enviar_correo
 from app.utilities.seguridad import generar_codigo_verificacion, hashear_contrasena
 
@@ -30,6 +34,10 @@ class CodigoVerificacionInvalidoError(ValueError):
 
 
 class UsuarioYaActivoError(ValueError):
+    pass
+
+
+class UsuarioNoEncontradoError(ValueError):
     pass
 
 
@@ -59,6 +67,39 @@ def registrar_usuario(
 
     sesion.add(usuario)
     sesion.flush()
+
+    codigo = generar_codigo_verificacion()
+    codigo_verificacion = CodigoVerificacion(
+        id_usuario=usuario.id,
+        codigo=codigo,
+        expira_en=datetime.now(UTC) + timedelta(minutes=MINUTOS_EXPIRACION_CODIGO),
+        utilizado=False,
+    )
+
+    sesion.add(codigo_verificacion)
+
+    enviar_correo_verificacion(usuario.correo, usuario.nombre, codigo)
+    sesion.commit()
+    sesion.refresh(usuario)
+
+    return usuario
+
+
+def reenviar_codigo_verificacion(
+    sesion: Session,
+    datos: ReenviarCodigoSolicitud,
+) -> Usuario:
+    usuario = sesion.scalar(
+        select(Usuario).where(Usuario.correo == datos.correo)
+    )
+
+    if usuario is None:
+        raise UsuarioNoEncontradoError("No existe un usuario con ese correo.")
+
+    if usuario.estado == ESTADO_ACTIVO:
+        raise UsuarioYaActivoError("El usuario ya se encuentra activo.")
+
+    invalidar_codigos_pendientes(sesion, usuario.id)
 
     codigo = generar_codigo_verificacion()
     codigo_verificacion = CodigoVerificacion(

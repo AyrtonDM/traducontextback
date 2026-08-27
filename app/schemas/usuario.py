@@ -43,12 +43,16 @@ class RegistroUsuarioSolicitud(BaseModel):
         return valor
 
 
-class RegistroUsuarioRespuesta(BaseModel):
+class RegistroUsuarioResultado(BaseModel):
     id: int
     nombre: str
     correo: str
     estado: str
+
+
+class RegistroUsuarioRespuesta(BaseModel):
     mensaje: str
+    resultado: RegistroUsuarioResultado
 
 
 class VerificarCodigoSolicitud(BaseModel):
@@ -66,8 +70,36 @@ class VerificarCodigoSolicitud(BaseModel):
         return valor
 
 
-class VerificarCodigoRespuesta(BaseModel):
+class VerificarCodigoResultado(BaseModel):
     id: int
     correo: str
     estado: str
+
+
+class VerificarCodigoRespuesta(BaseModel):
     mensaje: str
+    resultado: VerificarCodigoResultado
+
+
+class ReenviarCodigoSolicitud(BaseModel):
+    correo: str = Field(max_length=255)
+
+    @field_validator("correo")
+    @classmethod
+    def validar_correo(cls, valor: str) -> str:
+        valor = valor.strip().lower()
+
+        if not PATRON_CORREO.fullmatch(valor):
+            raise ValueError("El correo no tiene un formato valido.")
+
+        return valor
+
+
+class ReenviarCodigoResultado(BaseModel):
+    correo: str
+    estado: str
+
+
+class ReenviarCodigoRespuesta(BaseModel):
+    mensaje: str
+    resultado: ReenviarCodigoResultado

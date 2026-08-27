@@ -1,3 +1,15 @@
+La forma de respuesta que devolvera 
+un mensaje y resultado ejemplo: 
+
+{
+  "mensaje": "Usuario obtenido correctamente",
+  "resultado": {
+    "id": 15,
+    "nombre": "Elizabeth",
+    "correo": "usuario@gmail.com"
+  }
+}
+
 # Para realizar migraciones
 alembic revision --autogenerate -m "agregar telefono a usuario"
 alembic upgrade head
