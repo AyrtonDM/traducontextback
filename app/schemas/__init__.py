@@ -8,6 +8,10 @@ from app.schemas.usuario import (
     VerificarCodigoResultado,
     VerificarCodigoRespuesta,
     VerificarCodigoSolicitud,
+    RolDetalle,
+    UsuarioDetalle,
+    UsuarioDetalleRespuesta,
+    ListaUsuariosRespuesta,
 )
 
 
@@ -21,4 +25,9 @@ __all__ = [
     "VerificarCodigoResultado",
     "VerificarCodigoRespuesta",
     "VerificarCodigoSolicitud",
+    "RolDetalle",
+    "UsuarioDetalle",
+    "UsuarioDetalleRespuesta",
+    "ListaUsuariosRespuesta",
 ]
+

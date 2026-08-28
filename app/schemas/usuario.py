@@ -103,3 +103,29 @@ class ReenviarCodigoResultado(BaseModel):
 class ReenviarCodigoRespuesta(BaseModel):
     mensaje: str
     resultado: ReenviarCodigoResultado
+
+
+class RolDetalle(BaseModel):
+    model_config = {"from_attributes": True}
+    id: int
+    nombre: str
+
+
+class UsuarioDetalle(BaseModel):
+    model_config = {"from_attributes": True}
+    id: int
+    nombre: str
+    correo: str
+    estado: str
+    rol: RolDetalle
+
+
+class UsuarioDetalleRespuesta(BaseModel):
+    mensaje: str
+    resultado: UsuarioDetalle
+
+
+class ListaUsuariosRespuesta(BaseModel):
+    mensaje: str
+    resultado: list[UsuarioDetalle]
+

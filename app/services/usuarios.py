@@ -17,7 +17,7 @@ from app.utilities.seguridad import generar_codigo_verificacion, hashear_contras
 
 ESTADO_ACTIVO = "ACTIVO"
 ESTADO_INACTIVO = "INACTIVO"
-ROL_CLIENTE = "CLIENTE"
+ROL_USUARIO = "USUARIO"
 MINUTOS_EXPIRACION_CODIGO = 10
 
 
@@ -25,7 +25,7 @@ class CorreoYaRegistradoError(ValueError):
     pass
 
 
-class RolClienteNoExisteError(RuntimeError):
+class RolUsuarioNoExisteError(RuntimeError):
     pass
 
 
@@ -52,17 +52,17 @@ def registrar_usuario(
     if usuario_existente is not None:
         raise CorreoYaRegistradoError("El correo ya se encuentra registrado.")
 
-    rol_cliente = sesion.scalar(select(Rol).where(Rol.nombre == ROL_CLIENTE))
+    rol_usuario = sesion.scalar(select(Rol).where(Rol.nombre == ROL_USUARIO))
 
-    if rol_cliente is None:
-        raise RolClienteNoExisteError("No existe el rol CLIENTE.")
+    if rol_usuario is None:
+        raise RolUsuarioNoExisteError("No existe el rol USUARIO.")
 
     usuario = Usuario(
         nombre=datos.nombre,
         correo=datos.correo,
         contrasena=hashear_contrasena(datos.contrasena),
         estado=ESTADO_INACTIVO,
-        rol=rol_cliente,
+        rol=rol_usuario,
     )
 
     sesion.add(usuario)
@@ -181,3 +181,9 @@ def enviar_correo_verificacion(correo: str, nombre: str, codigo: str) -> None:
             f"Vence en {MINUTOS_EXPIRACION_CODIGO} minutos."
         ),
     )
+
+
+def obtener_todos_usuarios(sesion: Session) -> list[Usuario]:
+    """Retorna la lista de todos los usuarios registrados en el sistema."""
+    return list(sesion.scalars(select(Usuario)).all())
+

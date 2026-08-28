@@ -9,6 +9,14 @@ un mensaje y resultado ejemplo:
     "correo": "usuario@gmail.com"
   }
 }
+# para ejecutar proyecto
+descargar python version 3.14
+luego py -3.14 -m venv venv
+activar el entorno virtual
+.\venv\Scripts\Activate
+pip install -r requirements.txt
+probar proyecto
+uvicorn app.main:app --reload
 
 # Para realizar migraciones
 alembic revision --autogenerate -m "agregar telefono a usuario"
@@ -30,12 +38,12 @@ app/
 
 Contiene las rutas o endpoints de la API.
 
-Aquí se define cómo el frontend u otros clientes pueden comunicarse con el backend mediante HTTP.
+Aquï¿½ se define cï¿½mo el frontend u otros clientes pueden comunicarse con el backend mediante HTTP.
 
 Contiene
 Routers de FastAPI.
 Endpoints.
-Parámetros recibidos por las rutas.
+Parï¿½metros recibidos por las rutas.
 Dependencias necesarias para las rutas.
 Respuestas HTTP.
 Ejemplos
@@ -56,7 +64,7 @@ GET /usuarios
 GET /usuarios/{id}
 Importante
 
-La carpeta api no debe contener la lógica de negocio compleja.
+La carpeta api no debe contener la lï¿½gica de negocio compleja.
 
 La ruta debe encargarse principalmente de recibir la solicitud, llamar al servicio correspondiente y devolver la respuesta.
 
@@ -72,17 +80,17 @@ Database
 
 # core/
 
-Contiene la configuración y componentes centrales del sistema.
+Contiene la configuraciï¿½n y componentes centrales del sistema.
 
-Son elementos utilizados por diferentes partes del backend y que forman parte de la configuración general de la aplicación.
+Son elementos utilizados por diferentes partes del backend y que forman parte de la configuraciï¿½n general de la aplicaciï¿½n.
 
 Contiene
-Configuración mediante variables de entorno.
+Configuraciï¿½n mediante variables de entorno.
 Configuraciones generales de FastAPI.
 Configuraciones de seguridad.
-Configuraciones de autenticación.
+Configuraciones de autenticaciï¿½n.
 Constantes globales relacionadas con la infraestructura.
-Dependencias centrales de la aplicación.
+Dependencias centrales de la aplicaciï¿½n.
 Ejemplos
 core/
 ??? __init__.py
@@ -98,28 +106,28 @@ Configuracion
     ?
 Aplicacion
 
-Aquí también pueden ubicarse elementos relacionados con JWT, hashing o manejo general de excepciones si son utilizados por diferentes módulos.
+Aquï¿½ tambiï¿½n pueden ubicarse elementos relacionados con JWT, hashing o manejo general de excepciones si son utilizados por diferentes mï¿½dulos.
 
 # database/
 
-Contiene todo lo relacionado con la conexión y acceso técnico a la base de datos.
+Contiene todo lo relacionado con la conexiï¿½n y acceso tï¿½cnico a la base de datos.
 
 Contiene
-Conexión a PostgreSQL.
+Conexiï¿½n a PostgreSQL.
 Motor de SQLAlchemy.
 Sesiones de base de datos.
 Clase Base de SQLAlchemy.
-Dependencias para obtener una sesión.
-Configuraciones específicas de la base de datos.
+Dependencias para obtener una sesiï¿½n.
+Configuraciones especï¿½ficas de la base de datos.
 Ejemplos
 database/
 ??? __init__.py
 ??? conexion.py
 ??? base.py
 
-La responsabilidad de esta carpeta es proporcionar la conexión:
+La responsabilidad de esta carpeta es proporcionar la conexiï¿½n:
 
-Aplicación
+Aplicaciï¿½n
      ?
 database
      ?
@@ -128,11 +136,11 @@ SQLAlchemy
 PostgreSQL
 Importante
 
-Aquí no se colocan las consultas específicas de Usuario, Rol, Permiso, etc.
+Aquï¿½ no se colocan las consultas especï¿½ficas de Usuario, Rol, Permiso, etc.
 
-La conexión pertenece a database.
+La conexiï¿½n pertenece a database.
 
-Las operaciones específicas sobre entidades deben estar en los servicios/repositorios que correspondan.
+Las operaciones especï¿½ficas sobre entidades deben estar en los servicios/repositorios que correspondan.
 
 # models/
 
@@ -163,7 +171,7 @@ Estos modelos definen:
 Columnas.
 Tipos de datos.
 Claves primarias.
-Claves foráneas.
+Claves forï¿½neas.
 Relaciones entre tablas.
 Restricciones relacionadas con la base de datos.
 Ejemplo conceptual
@@ -181,7 +189,7 @@ Contiene los esquemas Pydantic utilizados para validar y estructurar los datos q
 
 Los schemas no representan directamente tablas de la base de datos.
 
-Su función principal es definir la estructura de los datos de comunicación.
+Su funciï¿½n principal es definir la estructura de los datos de comunicaciï¿½n.
 
 Ejemplos
 schemas/
@@ -204,7 +212,7 @@ Frontend
    ?
 Schema
    ?
-Validación
+Validaciï¿½n
    ?
 Service
 Diferencia entre models y schemas
@@ -229,7 +237,7 @@ seeds/
 ??? permisos.py
 ??? datos_iniciales.py
 
-Por ejemplo, el sistema podría necesitar inicialmente:
+Por ejemplo, el sistema podrï¿½a necesitar inicialmente:
 
 Roles:
 
@@ -244,7 +252,7 @@ EDITAR_USUARIO
 ELIMINAR_USUARIO
 VER_USUARIOS
 
-Los seeds podrían insertar esos datos cuando se prepara una base de datos nueva.
+Los seeds podrï¿½an insertar esos datos cuando se prepara una base de datos nueva.
 
 Importante
 
@@ -260,11 +268,11 @@ Seeds
 
 # services/
 
-Contiene la lógica de negocio de la aplicación.
+Contiene la lï¿½gica de negocio de la aplicaciï¿½n.
 
-Esta es una de las carpetas más importantes del proyecto.
+Esta es una de las carpetas mï¿½s importantes del proyecto.
 
-Los servicios reciben una operación que debe realizarse y coordinan las diferentes acciones necesarias para completarla.
+Los servicios reciben una operaciï¿½n que debe realizarse y coordinan las diferentes acciones necesarias para completarla.
 
 Ejemplos
 services/
@@ -274,23 +282,23 @@ services/
 ??? correo.py
 ??? sesion.py
 
-Por ejemplo, registrar un usuario podría requerir:
+Por ejemplo, registrar un usuario podrï¿½a requerir:
 
 Registrar usuario
        ?
-Validar información
+Validar informaciï¿½n
        ?
 Comprobar que el correo no exista
        ?
 Crear usuario
        ?
-Generar código
+Generar cï¿½digo
        ?
-Guardar código
+Guardar cï¿½digo
        ?
 Enviar correo
 
-Toda esa lógica pertenece al servicio de autenticación/usuario, no directamente a la ruta.
+Toda esa lï¿½gica pertenece al servicio de autenticaciï¿½n/usuario, no directamente a la ruta.
 
 Flujo recomendado
 API
@@ -299,13 +307,13 @@ Service
  ?
 Models / Database
 
-Los servicios contienen las reglas que determinan qué debe hacer el sistema.
+Los servicios contienen las reglas que determinan quï¿½ debe hacer el sistema.
 
 # utilities/
 
-Contiene funciones auxiliares y reutilizables que pueden ser utilizadas por diferentes módulos del sistema.
+Contiene funciones auxiliares y reutilizables que pueden ser utilizadas por diferentes mï¿½dulos del sistema.
 
-Una utilidad debe realizar una tarea específica y reutilizable, pero no debería contener lógica de negocio propia de una funcionalidad.
+Una utilidad debe realizar una tarea especï¿½fica y reutilizable, pero no deberï¿½a contener lï¿½gica de negocio propia de una funcionalidad.
 
 Ejemplos
 utilities/
@@ -319,25 +327,25 @@ Por ejemplo:
 
 correo.py
 
-Puede contener una función genérica:
+Puede contener una funciï¿½n genï¿½rica:
 
 enviar_correo()
 
-Esta función puede utilizarse para:
+Esta funciï¿½n puede utilizarse para:
 
-Código de verificación
-Recuperación de contraseña
+Cï¿½digo de verificaciï¿½n
+Recuperaciï¿½n de contraseï¿½a
 Notificaciones
-Información
+Informaciï¿½n
 Confirmaciones
 codigo.py
 
-Puede contener funciones para generar códigos aleatorios:
+Puede contener funciones para generar cï¿½digos aleatorios:
 
 generar_codigo_verificacion()
 Diferencia entre services y utilities
 services/
-    Contiene lógica de negocio.
+    Contiene lï¿½gica de negocio.
 
 utilities/
     Contiene herramientas reutilizables.
@@ -346,7 +354,7 @@ Por ejemplo:
 
 services/autenticacion.py
         ?
-generar código
+generar cï¿½digo
         ?
 utilities/codigo.py
 
@@ -358,28 +366,28 @@ enviar correo
         ?
 utilities/correo.py
 
-La utilidad no necesita saber por qué se está enviando el correo.
+La utilidad no necesita saber por quï¿½ se estï¿½ enviando el correo.
 
 __init__.py
 
-Permite que Python trate la carpeta app como un paquete y facilita las importaciones entre módulos.
+Permite que Python trate la carpeta app como un paquete y facilita las importaciones entre mï¿½dulos.
 
-Normalmente no debe contener lógica de negocio.
+Normalmente no debe contener lï¿½gica de negocio.
 
-También puede utilizarse posteriormente para exponer determinados elementos del paquete si fuera necesario.
+Tambiï¿½n puede utilizarse posteriormente para exponer determinados elementos del paquete si fuera necesario.
 
 # main.py
 
 Es el punto de entrada principal de FastAPI.
 
-Aquí se crea la aplicación y se registran los routers principales.
+Aquï¿½ se crea la aplicaciï¿½n y se registran los routers principales.
 
 Conceptualmente:
 
 main.py
    ?
-   ??? Crear aplicación FastAPI
-   ??? Configuración general
+   ??? Crear aplicaciï¿½n FastAPI
+   ??? Configuraciï¿½n general
    ??? Registrar routers
    ??? Configuraciones globales
 
@@ -393,6 +401,6 @@ api/autenticacion.py
 api/usuarios.py
 api/roles.py
 
-El archivo no debería contener toda la lógica del sistema.
+El archivo no deberï¿½a contener toda la lï¿½gica del sistema.
 
-Su función principal es ensamblar la aplicación.
+Su funciï¿½n principal es ensamblar la aplicaciï¿½n.

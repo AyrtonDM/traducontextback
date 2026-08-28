@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database.conexion import obtener_sesion
+from app.api.dependencies import obtener_usuario_actual, requiere_permiso
+from app.models.usuario.usuario import Usuario
 from app.schemas.usuario import (
     ReenviarCodigoRespuesta,
     ReenviarCodigoResultado,
@@ -12,16 +14,19 @@ from app.schemas.usuario import (
     VerificarCodigoResultado,
     VerificarCodigoRespuesta,
     VerificarCodigoSolicitud,
+    UsuarioDetalleRespuesta,
+    ListaUsuariosRespuesta,
 )
 from app.services.usuarios import (
     CodigoVerificacionInvalidoError,
     CorreoYaRegistradoError,
-    RolClienteNoExisteError,
+    RolUsuarioNoExisteError,
     UsuarioNoEncontradoError,
     UsuarioYaActivoError,
     registrar_usuario,
     reenviar_codigo_verificacion,
     verificar_codigo_usuario,
+    obtener_todos_usuarios,
 )
 from app.utilities.correo import CorreoNoConfiguradoError, EnvioCorreoError
 
@@ -46,7 +51,7 @@ def registrar_nuevo_usuario(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(error),
         ) from error
-    except RolClienteNoExisteError as error:
+    except RolUsuarioNoExisteError as error:
         sesion.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -144,3 +149,34 @@ def obtener_estado_error_correo(error: Exception) -> int:
 
 def obtener_mensaje_error_correo(error: Exception) -> str:
     return f"No se pudo enviar el correo de verificacion: {error}"
+
+
+@enrutador.get(
+    "/me",
+    response_model=UsuarioDetalleRespuesta,
+    status_code=status.HTTP_200_OK,
+)
+def obtener_mi_perfil(
+    usuario_actual: Usuario = Depends(obtener_usuario_actual),
+) -> UsuarioDetalleRespuesta:
+    return UsuarioDetalleRespuesta(
+        mensaje="Usuario obtenido correctamente.",
+        resultado=usuario_actual,
+    )
+
+
+@enrutador.get(
+    "",
+    response_model=ListaUsuariosRespuesta,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(requiere_permiso("gestionar_usuarios"))],
+)
+def listar_usuarios(
+    sesion: Session = Depends(obtener_sesion),
+) -> ListaUsuariosRespuesta:
+    usuarios = obtener_todos_usuarios(sesion)
+    return ListaUsuariosRespuesta(
+        mensaje="Usuarios obtenidos correctamente.",
+        resultado=usuarios,
+    )
+
