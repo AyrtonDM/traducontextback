@@ -1,40 +1,55 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api.routes.autenticacion import enrutador as enrutador_autenticacion
-from app.api.routes.usuarios import enrutador as enrutador_usuarios
-
+from app.api.rutas import enrutador
 from app.core.configuracion import configuracion
+from app.database.inicializacion import inicializar_base_datos
 
-app = FastAPI(
-    title=configuracion.app_name,
-    description="API para autenticacion de usuarios de TraduContext.",
-    version="1.0.0",
-    openapi_tags=[
-        {
-            "name": "autenticacion",
-            "description": "Inicio y cierre de sesiones de usuario.",
-        }
-    ],
-)
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    inicializar_base_datos()
+    yield
+
+
+app = FastAPI(title=configuracion.app_name, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:4200"],
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(
-    enrutador_usuarios,
-    prefix=configuracion.api_v1_prefix,
-)
+app.include_router(enrutador, prefix=configuracion.api_v1_prefix)
 
-app.include_router(
-    enrutador_autenticacion,
-    prefix=configuracion.api_v1_prefix,
-)
+
+@app.exception_handler(StarletteHTTPException)
+async def manejar_error_http(_, error: StarletteHTTPException):
+    return JSONResponse(
+        status_code=error.status_code,
+        content={
+            "mensaje": str(error.detail),
+            "resultado": None,
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def manejar_error_validacion(_, error: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "mensaje": "Datos invalidos.",
+            "resultado": jsonable_encoder(error.errors()),
+        },
+    )
 
 
 @app.get("/")
