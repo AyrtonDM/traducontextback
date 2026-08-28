@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.autenticacion import enrutador as enrutador_autenticacion
+from app.api.routes.usuarios import enrutador as enrutador_usuarios
+
 from app.core.configuracion import configuracion
 
 app = FastAPI(
@@ -22,6 +24,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+app.include_router(
+    enrutador_usuarios,
+    prefix=configuracion.api_v1_prefix,
 )
 
 app.include_router(
