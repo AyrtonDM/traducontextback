@@ -48,6 +48,24 @@ class SolicitarRecuperacionRespuesta(BaseModel):
     resultado: None = None
 
 
+class ValidarCodigoRecuperacionSolicitud(BaseModel):
+    correo: str = Field(max_length=255)
+    codigo: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+    @field_validator("correo")
+    @classmethod
+    def validar_correo(cls, valor: str) -> str:
+        valor = valor.strip().lower()
+        if not PATRON_CORREO.fullmatch(valor):
+            raise ValueError("El correo no tiene un formato valido.")
+        return valor
+
+
+class ValidarCodigoRecuperacionRespuesta(BaseModel):
+    mensaje: str
+    resultado: None = None
+
+
 class RestablecerContrasenaSolicitud(BaseModel):
     correo: str = Field(max_length=255)
     codigo: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")

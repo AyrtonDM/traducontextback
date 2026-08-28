@@ -9,6 +9,7 @@ from app.schemas.autenticacion import (
     LoginSolicitud,
     RestablecerContrasenaSolicitud,
     SolicitarRecuperacionSolicitud,
+    ValidarCodigoRecuperacionSolicitud,
 )
 from app.core.seguridad import verificar_contrasena, generar_token_sesion
 from app.utilities.correo import enviar_correo
@@ -153,6 +154,32 @@ def restablecer_contrasena(
         .values(estado="CERRADA", fecha_cierre=datetime.now(UTC))
     )
     sesion_db.commit()
+
+
+def validar_codigo_recuperacion(
+    sesion_db: Session,
+    datos: ValidarCodigoRecuperacionSolicitud,
+) -> None:
+    usuario = sesion_db.scalar(
+        select(Usuario).where(
+            Usuario.correo == datos.correo,
+            Usuario.estado == "ACTIVO",
+        )
+    )
+    codigo = None
+    if usuario is not None:
+        codigo = sesion_db.scalar(
+            select(CodigoVerificacion)
+            .where(CodigoVerificacion.id_usuario == usuario.id)
+            .where(CodigoVerificacion.codigo == datos.codigo)
+            .where(CodigoVerificacion.utilizado.is_(False))
+            .order_by(CodigoVerificacion.creado_en.desc())
+        )
+
+    if codigo is None or codigo.expira_en <= datetime.now(UTC):
+        raise CodigoRecuperacionInvalidoError(
+            "El codigo de recuperacion es invalido o expiro."
+        )
 
 
 def invalidar_codigos_recuperacion(sesion_db: Session, id_usuario: int) -> None:

@@ -11,6 +11,8 @@ from app.schemas.autenticacion import (
     RestablecerContrasenaRespuesta,
     SolicitarRecuperacionSolicitud,
     SolicitarRecuperacionRespuesta,
+    ValidarCodigoRecuperacionSolicitud,
+    ValidarCodigoRecuperacionRespuesta,
 )
 from app.services.autenticacion import (
     iniciar_sesion,
@@ -20,6 +22,7 @@ from app.services.autenticacion import (
     SesionInvalidaError,
     solicitar_recuperacion,
     restablecer_contrasena,
+    validar_codigo_recuperacion,
     CodigoRecuperacionInvalidoError,
 )
 from app.utilities.correo import CorreoNoConfiguradoError, EnvioCorreoError
@@ -144,6 +147,31 @@ def solicitar_codigo_recuperacion(
         )
     )
 
+@enrutador.post(
+    "/validar-codigo-recuperacion",
+    response_model=ValidarCodigoRecuperacionRespuesta,
+    summary="Validar codigo de recuperacion",
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "description": "El codigo es invalido o ha expirado."
+        },
+    },
+)
+def validar_codigo_recuperacion_usuario(
+    datos: ValidarCodigoRecuperacionSolicitud,
+    sesion_db: Session = Depends(obtener_sesion),
+) -> ValidarCodigoRecuperacionRespuesta:
+    try:
+        validar_codigo_recuperacion(sesion_db, datos)
+    except CodigoRecuperacionInvalidoError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    return ValidarCodigoRecuperacionRespuesta(
+        mensaje="Codigo de recuperacion valido.",
+    )
 
 @enrutador.post(
     "/restablecer-contrasena",
