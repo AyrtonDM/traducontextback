@@ -52,6 +52,7 @@ async def manejar_error_validacion(_, error: RequestValidationError):
     )
 
 
+
 @app.get("/")
 def inicio():
     return {
