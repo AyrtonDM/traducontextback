@@ -41,7 +41,7 @@ def generar_token_sesion() -> str:
 
 def requiere_rol(*roles_permitidos: str):
     """Dependency factory para validar que el usuario tenga uno de los roles permitidos."""
-    # Importamos aquí para evitar dependencia circular
+    # Importamos aqui para evitar dependencia circular
     from app.services.usuarios import obtener_usuario_actual
     
     def dependencia(usuario: Usuario = Depends(obtener_usuario_actual)) -> Usuario:
@@ -56,7 +56,7 @@ def requiere_rol(*roles_permitidos: str):
 
 def requiere_permiso(permiso_requerido: str):
     """Dependency factory para validar que el rol del usuario tenga el permiso requerido."""
-    # Importamos aquí para evitar dependencia circular
+    # Importamos aqui para evitar dependencia circular
     from app.services.usuarios import obtener_usuario_actual
     
     def dependencia(
