@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database.conexion import obtener_sesion
-from app.api.dependencies import obtener_usuario_actual, requiere_permiso
+from app.core.seguridad import requiere_permiso
 from app.models.usuario.usuario import Usuario
 from app.schemas.usuario import (
     ReenviarCodigoRespuesta,
@@ -23,6 +23,7 @@ from app.services.usuarios import (
     RolUsuarioNoExisteError,
     UsuarioNoEncontradoError,
     UsuarioYaActivoError,
+    obtener_usuario_actual,
     registrar_usuario,
     reenviar_codigo_verificacion,
     verificar_codigo_usuario,

@@ -1,7 +1,15 @@
 import secrets
 import base64
 import hashlib
+from fastapi import Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from app.utilities.seguridad import ITERACIONES_HASH
+from app.database.conexion import obtener_sesion
+from app.models.usuario.usuario import Usuario
+from app.models.usuario.rol_permiso import RolPermiso
+from app.models.usuario.permiso import Permiso
 
 
 def verificar_contrasena(contrasena: str, hash_almacenado: str) -> bool:
@@ -29,3 +37,44 @@ def verificar_contrasena(contrasena: str, hash_almacenado: str) -> bool:
 def generar_token_sesion() -> str:
     """Genera un token seguro y Ãºnico de sesiÃ³n."""
     return secrets.token_urlsafe(64)
+
+
+def requiere_rol(*roles_permitidos: str):
+    """Dependency factory para validar que el usuario tenga uno de los roles permitidos."""
+    # Importamos aquí para evitar dependencia circular
+    from app.services.usuarios import obtener_usuario_actual
+    
+    def dependencia(usuario: Usuario = Depends(obtener_usuario_actual)) -> Usuario:
+        if usuario.rol.nombre not in roles_permitidos:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes permisos suficientes para realizar esta accion.",
+            )
+        return usuario
+    return dependencia
+
+
+def requiere_permiso(permiso_requerido: str):
+    """Dependency factory para validar que el rol del usuario tenga el permiso requerido."""
+    # Importamos aquí para evitar dependencia circular
+    from app.services.usuarios import obtener_usuario_actual
+    
+    def dependencia(
+        usuario: Usuario = Depends(obtener_usuario_actual),
+        sesion_db: Session = Depends(obtener_sesion),
+    ) -> Usuario:
+        # Verificar si el rol del usuario tiene el permiso requerido
+        tiene_permiso = sesion_db.scalar(
+            select(RolPermiso)
+            .join(Permiso)
+            .where(RolPermiso.id_rol == usuario.id_rol)
+            .where(Permiso.nombre == permiso_requerido)
+        ) is not None
+
+        if not tiene_permiso:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes los permisos necesarios para realizar esta accion.",
+            )
+        return usuario
+    return dependencia
