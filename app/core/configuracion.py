@@ -26,6 +26,7 @@ class Configuracion(BaseSettings):
     gmail_usuario: str
     gmail_password: str
     gmail_remitente: str
+    openai_api_key: str
 
     model_config = SettingsConfigDict(
         env_file=RUTA_BASE / ".env",
