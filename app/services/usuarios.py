@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.database.conexion import obtener_sesion
 from app.models.usuario.codigo_verificacion import CodigoVerificacion
+
+from app.models.usuario.rol_permiso import RolPermiso
+from app.models.usuario.permiso import Permiso
 from app.models.usuario.rol import Rol
 from app.models.usuario.usuario import Usuario
 from app.models.usuario.sesion import Sesion
@@ -80,6 +83,18 @@ def obtener_usuario_actual(
 
     return usuario
 
+def obtener_permisos_usuario(
+    sesion_db: Session,
+    usuario: Usuario,
+) -> list[str]:
+    """Obtiene los permisos asociados al rol del usuario."""
+    permisos = sesion_db.scalars(
+        select(Permiso)
+        .join(RolPermiso)
+        .where(RolPermiso.id_rol == usuario.id_rol)
+    ).all()
+
+    return [permiso.nombre for permiso in permisos]
 
 class CorreoYaRegistradoError(ValueError):
     pass

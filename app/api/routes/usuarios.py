@@ -16,6 +16,8 @@ from app.schemas.usuario import (
     VerificarCodigoSolicitud,
     UsuarioDetalleRespuesta,
     ListaUsuariosRespuesta,
+    UsuarioDetalle,
+    RolDetalle,
 )
 from app.services.usuarios import (
     CodigoVerificacionInvalidoError,
@@ -28,6 +30,7 @@ from app.services.usuarios import (
     reenviar_codigo_verificacion,
     verificar_codigo_usuario,
     obtener_todos_usuarios,
+    obtener_permisos_usuario,
 )
 from app.utilities.correo import CorreoNoConfiguradoError, EnvioCorreoError
 
@@ -159,10 +162,20 @@ def obtener_mensaje_error_correo(error: Exception) -> str:
 )
 def obtener_mi_perfil(
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
+    sesion: Session = Depends(obtener_sesion),
 ) -> UsuarioDetalleRespuesta:
+    permisos = obtener_permisos_usuario(sesion, usuario_actual)
+
     return UsuarioDetalleRespuesta(
         mensaje="Usuario obtenido correctamente.",
-        resultado=usuario_actual,
+        resultado=UsuarioDetalle(
+            id=usuario_actual.id,
+            nombre=usuario_actual.nombre,
+            correo=usuario_actual.correo,
+            estado=usuario_actual.estado,
+            rol=RolDetalle.model_validate(usuario_actual.rol),
+            permisos=permisos,
+        ),
     )
 
 

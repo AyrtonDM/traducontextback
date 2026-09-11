@@ -118,6 +118,7 @@ class UsuarioDetalle(BaseModel):
     correo: str
     estado: str
     rol: RolDetalle
+    permisos: list[str]
 
 
 class UsuarioDetalleRespuesta(BaseModel):
