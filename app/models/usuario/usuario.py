@@ -51,3 +51,8 @@ class Usuario(Base):
         back_populates="usuario",
         cascade="all, delete-orphan",
     )
+    contextos = relationship(
+        "Contexto",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+    )

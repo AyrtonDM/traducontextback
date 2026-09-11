@@ -5,8 +5,8 @@ motor = MotorContextual()
 
 
 resultado = motor.analizar(
-    contexto="????",
-    texto="???????????"
+    contexto="financial institution",
+    texto="I went to the bank."
 )
 
 

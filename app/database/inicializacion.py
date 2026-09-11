@@ -1,6 +1,7 @@
 import app.models  # noqa: F401
 from app.database.base import Base
 from app.database.conexion import FabricaSesiones, motor
+from app.seeds.seed_contexto import sembrar_contextos
 from app.seeds.seed_rol import sembrar_roles
 
 
@@ -17,4 +18,5 @@ def inicializar_base_datos() -> None:
 
     with FabricaSesiones() as sesion:
         sembrar_roles(sesion)
+        sembrar_contextos(sesion)
         sesion.commit()
