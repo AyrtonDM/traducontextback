@@ -118,15 +118,23 @@ class UsuarioDetalle(BaseModel):
     correo: str
     estado: str
     rol: RolDetalle
+
+
+class UsuarioPerfilDetalle(BaseModel):
+    model_config = {"from_attributes": True}
+    id: int
+    nombre: str
+    correo: str
+    estado: str
+    rol: RolDetalle
     permisos: list[str]
 
 
 class UsuarioDetalleRespuesta(BaseModel):
     mensaje: str
-    resultado: UsuarioDetalle
+    resultado: UsuarioPerfilDetalle
 
 
 class ListaUsuariosRespuesta(BaseModel):
     mensaje: str
     resultado: list[UsuarioDetalle]
-

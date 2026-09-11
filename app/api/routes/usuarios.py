@@ -16,7 +16,7 @@ from app.schemas.usuario import (
     VerificarCodigoSolicitud,
     UsuarioDetalleRespuesta,
     ListaUsuariosRespuesta,
-    UsuarioDetalle,
+    UsuarioPerfilDetalle,
     RolDetalle,
 )
 from app.services.usuarios import (
@@ -168,7 +168,7 @@ def obtener_mi_perfil(
 
     return UsuarioDetalleRespuesta(
         mensaje="Usuario obtenido correctamente.",
-        resultado=UsuarioDetalle(
+        resultado=UsuarioPerfilDetalle(
             id=usuario_actual.id,
             nombre=usuario_actual.nombre,
             correo=usuario_actual.correo,
