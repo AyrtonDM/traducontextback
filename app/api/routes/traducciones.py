@@ -9,12 +9,36 @@ from app.schemas.traduccion import (
     ListaTraduccionesRespuesta,
     ListaIdiomasRespuesta,
     ListaContextosRespuesta,
+    DeteccionIdiomaSolicitud,
+    DeteccionIdiomaRespuesta,
+    DeteccionIdiomaResultado,
 )
+from app.services.detector_idioma import detector_idioma
 from app.services.traduccion import servicio_traduccion
 from app.services.usuarios import obtener_usuario_actual
 
 
 enrutador = APIRouter(prefix="/traducciones", tags=["traducciones"])
+
+
+@enrutador.post(
+    "/detectar-idioma",
+    response_model=DeteccionIdiomaRespuesta,
+    status_code=status.HTTP_200_OK,
+    summary="Detectar automaticamente el idioma de un texto",
+)
+def detectar_idioma(
+    datos: DeteccionIdiomaSolicitud,
+) -> DeteccionIdiomaRespuesta:
+    resultado = detector_idioma.detectar(datos.texto)
+    return DeteccionIdiomaRespuesta(
+        mensaje="Idioma detectado exitosamente.",
+        resultado=DeteccionIdiomaResultado(
+            codigo=resultado["codigo"],
+            nombre=resultado["nombre"],
+            confianza=resultado["confianza"],
+        ),
+    )
 
 
 @enrutador.post(

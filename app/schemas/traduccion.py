@@ -72,3 +72,18 @@ class ContextoItem(BaseModel):
 class ListaContextosRespuesta(BaseModel):
     mensaje: str
     resultado: list[ContextoItem]
+
+
+class DeteccionIdiomaSolicitud(BaseModel):
+    texto: str = Field(..., min_length=1, max_length=5000, description="Texto para detectar el idioma")
+
+
+class DeteccionIdiomaResultado(BaseModel):
+    codigo: str
+    nombre: str
+    confianza: float
+
+
+class DeteccionIdiomaRespuesta(BaseModel):
+    mensaje: str
+    resultado: DeteccionIdiomaResultado
