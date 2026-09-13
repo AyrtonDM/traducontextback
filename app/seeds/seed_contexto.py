@@ -7,6 +7,22 @@ from app.models.usuario.usuario import Usuario
 
 CONTEXTOS_BASE = (
     (
+        "General",
+        "Contexto general de uso cotidiano o multidisciplinario sin jerga tecnica especifica.",
+    ),
+    (
+        "Personalizado",
+        "Contexto personalizado con instrucciones y especificaciones detalladas por el usuario.",
+    ),
+    (
+        "Academico",
+        "Contexto academico, cientifico, universitario, de investigacion, tesis y publicaciones formales.",
+    ),
+    (
+        "Profesional",
+        "Contexto corporativo, laboral, administrativo, correspondencia formal y negocios.",
+    ),
+    (
         "Tecnico",
         "Contexto relacionado con tecnologia, ingenieria, informatica, software, "
         "hardware y terminologia especializada. Se deben conservar o interpretar "
@@ -15,7 +31,7 @@ CONTEXTOS_BASE = (
     (
         "Legal",
         "Contexto relacionado con leyes, contratos, normativa, procedimientos "
-        "juridicos, derechos y obligaciones. Se debe mantener la precisi\u00f3n de la "
+        "juridicos, derechos y obligaciones. Se debe mantener la precision de la "
         "terminologia juridica y evitar interpretaciones coloquiales.",
     ),
     (
@@ -37,6 +53,7 @@ CONTEXTOS_BASE = (
         "naturales de comunicacion, priorizando un lenguaje fluido y comprensible.",
     ),
 )
+
 
 
 def sembrar_contextos(sesion: Session) -> None:
