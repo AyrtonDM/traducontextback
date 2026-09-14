@@ -1,5 +1,6 @@
 import logging
 from typing import Optional
+from fastapi import HTTPException, status
 from openai import OpenAI
 from pydantic import BaseModel, Field
 from sqlalchemy import select, desc
@@ -90,22 +91,24 @@ class ServicioTraduccion:
     ) -> TraduccionResultado:
         """Realiza la traduccion con IA y la persiste en la base de datos."""
 
-        # 1. Obtener o resolver idiomas
+        # 1. Obtener idiomas - solo desde los registros existentes en la BD
         idioma_orig = sesion.scalar(
             select(Idioma).where(Idioma.codigo == datos.idioma_origen.lower())
         )
         if not idioma_orig:
-            idioma_orig = Idioma(codigo=datos.idioma_origen.lower(), nombre=datos.idioma_origen.upper())
-            sesion.add(idioma_orig)
-            sesion.flush()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El idioma de origen '{datos.idioma_origen}' no está disponible en el sistema.",
+            )
 
         idioma_dest = sesion.scalar(
             select(Idioma).where(Idioma.codigo == datos.idioma_destino.lower())
         )
         if not idioma_dest:
-            idioma_dest = Idioma(codigo=datos.idioma_destino.lower(), nombre=datos.idioma_destino.upper())
-            sesion.add(idioma_dest)
-            sesion.flush()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El idioma de destino '{datos.idioma_destino}' no está disponible en el sistema.",
+            )
 
         # 2. Obtener o resolver contexto para el usuario
         nombre_contexto = (datos.dominio or "General").strip()
