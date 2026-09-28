@@ -14,7 +14,7 @@ enrutador = APIRouter(prefix="/idiomas", tags=["idiomas"])
     response_model=ListaIdiomasRespuesta,
     status_code=status.HTTP_200_OK,
     summary="Listar todos los idiomas",
-    description="Retorna la lista de todos los idiomas disponibles para traducción.",
+    description="Retorna la lista de todos los idiomas disponibles para traduccion.",
 )
 def listar_idiomas(
     sesion: Session = Depends(obtener_sesion),

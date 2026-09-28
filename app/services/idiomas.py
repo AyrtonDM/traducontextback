@@ -6,7 +6,7 @@ from app.seeds.seed_idiomas import sembrar_idiomas
 
 
 def obtener_todos_idiomas(sesion: Session) -> list[Idioma]:
-    """Retorna la lista de todos los idiomas disponibles en el sistema ordenados alfabéticamente.
+    """Retorna la lista de todos los idiomas disponibles en el sistema ordenados alfabeticamente.
     
     Si la tabla esta vacia, realiza la siembra inicial de idiomas.
     """

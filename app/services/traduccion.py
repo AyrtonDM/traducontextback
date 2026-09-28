@@ -27,14 +27,18 @@ def traducir_texto(
             "El idioma de destino es obligatorio."
         )
 
+    idioma_destino = idioma_destino.strip().lower()
+
     confianza_deteccion = None
 
-    if not idioma_origen:
+    if not idioma_origen or not str(idioma_origen).strip():
         resultado_deteccion = detector_idioma.detectar(
             texto_origen
         )
         idioma_origen = resultado_deteccion["codigo"]
         confianza_deteccion = resultado_deteccion["confianza"]
+    else:
+        idioma_origen = str(idioma_origen).strip().lower()
 
     traduccion = motor_nllb.traducir(
         texto=texto_origen,

@@ -1,7 +1,7 @@
 import secrets
 import base64
 import hashlib
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,7 @@ from app.models.usuario.permiso import Permiso
 
 
 def verificar_contrasena(contrasena: str, hash_almacenado: str) -> bool:
-    """Verifica si la contraseña coincide con el hash almacenado."""
+    """Verifica si la contrasena coincide con el hash almacenado."""
     try:
         partes = hash_almacenado.split("$")
         if len(partes) != 4 or partes[0] != "pbkdf2_sha256":
@@ -35,8 +35,29 @@ def verificar_contrasena(contrasena: str, hash_almacenado: str) -> bool:
 
 
 def generar_token_sesion() -> str:
-    """Genera un token seguro y único de sesión."""
+    """Genera un token seguro y unico de sesion."""
     return secrets.token_urlsafe(64)
+
+
+def requiere_token(
+    authorization: str = Header(..., description="Token Bearer de autorizacion"),
+    sesion_db: Session = Depends(obtener_sesion),
+) -> Usuario:
+    """Dependency para validar que la peticion incluya un token Bearer valido y activo.
+
+    Valida que:
+    1. La cabecera Authorization contenga el formato 'Bearer <token>'.
+    2. Exista una sesion activa y no expirada en la base de datos.
+    3. El usuario asociado a la sesion exista y este en estado ACTIVO.
+
+    Retorna el objeto Usuario autenticado.
+    """
+    from app.services.usuarios import obtener_usuario_actual
+
+    return obtener_usuario_actual(authorization=authorization, sesion_db=sesion_db)
+
+
+validar_token = requiere_token
 
 
 def requiere_rol(*roles_permitidos: str):
