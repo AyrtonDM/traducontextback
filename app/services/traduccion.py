@@ -1,9 +1,10 @@
+from app.core.configuracion import RUTA_BASE
 from app.services.detector_idioma import DetectorIdioma
 from app.services.motor_nllb import MotorNLLB
 
 
 detector_idioma = DetectorIdioma(
-    "app/models_ia/detector_idioma/lid.176.ftz"
+    str(RUTA_BASE / "app" / "models_ia" / "detector_idioma" / "lid.176.ftz")
 )
 motor_nllb = MotorNLLB()
 

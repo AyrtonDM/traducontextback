@@ -1,3 +1,7 @@
+from app.schemas.idioma import (
+    IdiomaDetalle,
+    ListaIdiomasRespuesta,
+)
 from app.schemas.usuario import (
     ReenviarCodigoRespuesta,
     ReenviarCodigoResultado,
@@ -16,6 +20,8 @@ from app.schemas.usuario import (
 
 
 __all__ = [
+    "IdiomaDetalle",
+    "ListaIdiomasRespuesta",
     "ReenviarCodigoRespuesta",
     "ReenviarCodigoResultado",
     "ReenviarCodigoSolicitud",
@@ -30,4 +36,3 @@ __all__ = [
     "UsuarioDetalleRespuesta",
     "ListaUsuariosRespuesta",
 ]
-
