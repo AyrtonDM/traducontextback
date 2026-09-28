@@ -1,8 +1,7 @@
-from sqlalchemy import select
+﻿from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.traduccion.contexto import Contexto
-from app.models.usuario.usuario import Usuario
 
 
 CONTEXTOS_BASE = (
@@ -15,7 +14,7 @@ CONTEXTOS_BASE = (
     (
         "Legal",
         "Contexto relacionado con leyes, contratos, normativa, procedimientos "
-        "juridicos, derechos y obligaciones. Se debe mantener la precisi\u00f3n de la "
+        "juridicos, derechos y obligaciones. Se debe mantener la precisión de la "
         "terminologia juridica y evitar interpretaciones coloquiales.",
     ),
     (
@@ -40,25 +39,23 @@ CONTEXTOS_BASE = (
 
 
 def sembrar_contextos(sesion: Session) -> None:
-    """Crea los contextos base para cada usuario existente, sin duplicarlos."""
+    """Crea los contextos base predefinidos en el sistema, sin duplicarlos."""
 
-    usuarios = sesion.scalars(select(Usuario)).all()
+    nombres_existentes = set(
+        sesion.scalars(
+            select(Contexto.nombre)
+        ).all()
+    )
 
-    for usuario in usuarios:
-        nombres_existentes = set(
-            sesion.scalars(
-                select(Contexto.nombre).where(Contexto.id_usuario == usuario.id)
-            ).all()
-        )
-
-        for nombre, descripcion in CONTEXTOS_BASE:
-            if nombre not in nombres_existentes:
-                sesion.add(
-                    Contexto(
-                        nombre=nombre,
-                        descripcion=descripcion,
-                        id_usuario=usuario.id,
-                    )
+    for nombre, descripcion in CONTEXTOS_BASE:
+        if nombre not in nombres_existentes:
+            sesion.add(
+                Contexto(
+                    nombre=nombre,
+                    descripcion=descripcion,
+                    personalizado=False,
+                    activo=True,
                 )
+            )
 
     sesion.flush()

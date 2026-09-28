@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -51,8 +51,8 @@ class Usuario(Base):
         back_populates="usuario",
         cascade="all, delete-orphan",
     )
-    contextos = relationship(
-        "Contexto",
+    traducciones = relationship(
+        "Traduccion",
         back_populates="usuario",
         cascade="all, delete-orphan",
     )

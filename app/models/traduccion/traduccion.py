@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -9,7 +9,7 @@ from app.database.base import Base
 class Traduccion(Base):
     __tablename__ = "traduccion"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id_traduccion: Mapped[int] = mapped_column(primary_key=True, index=True)
     texto_original: Mapped[str] = mapped_column(Text, nullable=False)
     texto_traducido: Mapped[str] = mapped_column(Text, nullable=False)
     fecha_creacion: Mapped[datetime] = mapped_column(
@@ -17,20 +17,27 @@ class Traduccion(Base):
         server_default=func.now(),
         nullable=False,
     )
-    id_contexto: Mapped[int] = mapped_column(
-        ForeignKey("contexto.id"),
+    id_configuracion_traduccion: Mapped[int] = mapped_column(
+        ForeignKey("configuracion_traduccion.id_configuracion_traduccion"),
         nullable=False,
     )
     id_idioma_origen: Mapped[int] = mapped_column(
-        ForeignKey("idioma.id"),
+        ForeignKey("idioma.id_idioma"),
         nullable=False,
     )
     id_idioma_destino: Mapped[int] = mapped_column(
-        ForeignKey("idioma.id"),
+        ForeignKey("idioma.id_idioma"),
+        nullable=False,
+    )
+    id_usuario: Mapped[int] = mapped_column(
+        ForeignKey("usuario.id"),
         nullable=False,
     )
 
-    contexto = relationship("Contexto", back_populates="traducciones")
+    configuracion_traduccion = relationship(
+        "ConfiguracionTraduccion",
+        back_populates="traducciones",
+    )
     idioma_origen = relationship(
         "Idioma",
         foreign_keys=[id_idioma_origen],
@@ -40,4 +47,8 @@ class Traduccion(Base):
         "Idioma",
         foreign_keys=[id_idioma_destino],
         back_populates="traducciones_destino",
+    )
+    usuario = relationship(
+        "Usuario",
+        back_populates="traducciones",
     )

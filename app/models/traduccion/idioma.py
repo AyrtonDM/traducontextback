@@ -1,4 +1,4 @@
-from sqlalchemy import String
+﻿from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -7,7 +7,7 @@ from app.database.base import Base
 class Idioma(Base):
     __tablename__ = "idioma"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id_idioma: Mapped[int] = mapped_column(primary_key=True, index=True)
     nombre: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     codigo: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)
 
