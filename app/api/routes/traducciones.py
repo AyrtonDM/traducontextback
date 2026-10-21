@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -8,15 +8,19 @@ from app.models.traduccion.contexto import Contexto
 from app.models.usuario.usuario import Usuario
 from app.schemas.contexto import ListaContextosRespuesta
 from app.schemas.idioma import ListaIdiomasRespuesta
+from app.schemas.tono import ListaTonosRespuesta
 from app.schemas.traduccion import (
     RespuestaTraduccion,
     SolicitudTraduccion,
     TraduccionResultado,
 )
+from app.schemas.variante_regional import ListaVariantesRegionalesRespuesta
 from app.services.contextos import obtener_todos_contextos
 from app.services.idiomas import obtener_todos_idiomas
 from app.services.motor_contextual import MotorContextual
+from app.services.tonos import obtener_todos_tonos
 from app.services.traduccion import traducir_texto
+from app.services.variantes_regionales import obtener_todas_variantes_regionales
 
 
 enrutador = APIRouter(
@@ -45,6 +49,7 @@ def listar_idiomas_traduccion(
     "/contextos",
     response_model=ListaContextosRespuesta,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(requiere_token)],
     summary="Listar contextos disponibles para traduccion (requiere token)",
     description=(
         "Retorna la lista de contextos registrados en la tabla contexto. "
@@ -62,10 +67,63 @@ def listar_contextos_traduccion(
     )
 
 
+@enrutador.get(
+    "/tonos",
+    response_model=ListaTonosRespuesta,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(requiere_token)],
+    summary="Listar tonos disponibles para traduccion (requiere token)",
+    description=(
+        "Retorna la lista de tonos registrados en la tabla tono. "
+        "Requiere cabecera 'Authorization: Bearer <token>'."
+    ),
+)
+def listar_tonos_traduccion(
+    usuario: Usuario = Depends(requiere_token),
+    sesion: Session = Depends(obtener_sesion),
+) -> ListaTonosRespuesta:
+    tonos = obtener_todos_tonos(sesion=sesion, solo_activos=True)
+    return ListaTonosRespuesta(
+        mensaje="Tonos obtenidos correctamente.",
+        resultado=tonos,
+    )
+
+
+@enrutador.get(
+    "/variantes-regionales",
+    response_model=ListaVariantesRegionalesRespuesta,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(requiere_token)],
+    summary="Listar variantes regionales disponibles para traduccion (requiere token)",
+    description=(
+        "Retorna la lista de variantes regionales registradas en la tabla variante_regional. "
+        "Requiere cabecera 'Authorization: Bearer <token>'."
+    ),
+)
+def listar_variantes_regionales_traduccion(
+    id_idioma: int | None = Query(
+        default=None,
+        description="Filtrar por id de idioma",
+    ),
+    usuario: Usuario = Depends(requiere_token),
+    sesion: Session = Depends(obtener_sesion),
+) -> ListaVariantesRegionalesRespuesta:
+    variantes = obtener_todas_variantes_regionales(
+        sesion=sesion,
+        id_idioma=id_idioma,
+        solo_activos=True,
+    )
+    return ListaVariantesRegionalesRespuesta(
+        mensaje="Variantes regionales obtenidas correctamente.",
+        resultado=variantes,
+    )
+
+
 @enrutador.post(
     "",
     response_model=RespuestaTraduccion,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(requiere_token)],
     summary="Traducir texto (requiere token)",
     description=(
         "Traduce un texto especificando idioma de destino, idioma de origen (opcional) "

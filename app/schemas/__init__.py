@@ -6,6 +6,10 @@ from app.schemas.idioma import (
     IdiomaDetalle,
     ListaIdiomasRespuesta,
 )
+from app.schemas.tono import (
+    TonoDetalle,
+    ListaTonosRespuesta,
+)
 from app.schemas.traduccion import (
     RespuestaTraduccion,
     SolicitudTraduccion,
@@ -26,6 +30,10 @@ from app.schemas.usuario import (
     UsuarioDetalleRespuesta,
     ListaUsuariosRespuesta,
 )
+from app.schemas.variante_regional import (
+    VarianteRegionalDetalle,
+    ListaVariantesRegionalesRespuesta,
+)
 
 
 __all__ = [
@@ -33,6 +41,10 @@ __all__ = [
     "ListaContextosRespuesta",
     "IdiomaDetalle",
     "ListaIdiomasRespuesta",
+    "TonoDetalle",
+    "ListaTonosRespuesta",
+    "VarianteRegionalDetalle",
+    "ListaVariantesRegionalesRespuesta",
     "SolicitudTraduccion",
     "TraduccionResultado",
     "RespuestaTraduccion",
