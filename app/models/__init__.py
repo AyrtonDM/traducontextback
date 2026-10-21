@@ -1,8 +1,10 @@
-﻿from app.models.traduccion import (
+from app.models.traduccion import (
     ConfiguracionTraduccion,
     Contexto,
     Idioma,
+    Tono,
     Traduccion,
+    VarianteRegional,
 )
 from app.models.usuario import (
     CodigoVerificacion,
@@ -24,5 +26,7 @@ __all__ = [
     "ConfiguracionTraduccion",
     "Contexto",
     "Idioma",
+    "Tono",
     "Traduccion",
+    "VarianteRegional",
 ]

@@ -1,3 +1,7 @@
+from app.schemas.contexto import (
+    ContextoDetalle,
+    ListaContextosRespuesta,
+)
 from app.schemas.idioma import (
     IdiomaDetalle,
     ListaIdiomasRespuesta,
@@ -25,6 +29,8 @@ from app.schemas.usuario import (
 
 
 __all__ = [
+    "ContextoDetalle",
+    "ListaContextosRespuesta",
     "IdiomaDetalle",
     "ListaIdiomasRespuesta",
     "SolicitudTraduccion",

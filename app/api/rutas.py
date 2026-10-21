@@ -4,9 +4,11 @@ from app.api.routes.usuarios import enrutador as enrutador_usuarios
 from app.api.routes.autenticacion import enrutador as enrutador_autenticacion
 from app.api.routes.traducciones import enrutador as enrutador_traducciones
 from app.api.routes.idiomas import enrutador as enrutador_idiomas
+from app.api.routes.contextos import enrutador as enrutador_contextos
 
 enrutador = APIRouter()
 enrutador.include_router(enrutador_usuarios)
 enrutador.include_router(enrutador_autenticacion)
 enrutador.include_router(enrutador_traducciones)
 enrutador.include_router(enrutador_idiomas)
+enrutador.include_router(enrutador_contextos)

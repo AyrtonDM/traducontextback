@@ -6,12 +6,14 @@ from app.core.seguridad import requiere_token
 from app.database.conexion import obtener_sesion
 from app.models.traduccion.contexto import Contexto
 from app.models.usuario.usuario import Usuario
+from app.schemas.contexto import ListaContextosRespuesta
 from app.schemas.idioma import ListaIdiomasRespuesta
 from app.schemas.traduccion import (
     RespuestaTraduccion,
     SolicitudTraduccion,
     TraduccionResultado,
 )
+from app.services.contextos import obtener_todos_contextos
 from app.services.idiomas import obtener_todos_idiomas
 from app.services.motor_contextual import MotorContextual
 from app.services.traduccion import traducir_texto
@@ -36,6 +38,27 @@ def listar_idiomas_traduccion(
     return ListaIdiomasRespuesta(
         mensaje="Idiomas obtenidos correctamente.",
         resultado=idiomas,
+    )
+
+
+@enrutador.get(
+    "/contextos",
+    response_model=ListaContextosRespuesta,
+    status_code=status.HTTP_200_OK,
+    summary="Listar contextos disponibles para traduccion (requiere token)",
+    description=(
+        "Retorna la lista de contextos registrados en la tabla contexto. "
+        "Requiere cabecera 'Authorization: Bearer <token>'."
+    ),
+)
+def listar_contextos_traduccion(
+    usuario: Usuario = Depends(requiere_token),
+    sesion: Session = Depends(obtener_sesion),
+) -> ListaContextosRespuesta:
+    contextos = obtener_todos_contextos(sesion=sesion, solo_activos=True)
+    return ListaContextosRespuesta(
+        mensaje="Contextos obtenidos correctamente.",
+        resultado=contextos,
     )
 
 

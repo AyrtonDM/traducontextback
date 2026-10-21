@@ -28,17 +28,30 @@ MINUTOS_EXPIRACION_CODIGO = 10
 
 
 def obtener_usuario_actual(
-    authorization: str = Header(..., description="Token Bearer de autorizacion"),
+    authorization: str | None = Header(None, description="Token Bearer de autorizacion"),
     sesion_db: Session = Depends(obtener_sesion),
 ) -> Usuario:
     """Valida el token de sesion y retorna el usuario actual con su rol."""
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales de autenticacion no proporcionadas o invalidas.",
+        )
+
     if not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Formato de autorizacion invalido. Use 'Bearer <token>'.",
         )
 
-    token = authorization.split(" ")[1]
+    partes = authorization.split(" ")
+    if len(partes) < 2 or not partes[1].strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token no proporcionado en la cabecera de autorizacion.",
+        )
+
+    token = partes[1].strip()
 
     # Buscar sesion activa
     sesion_usuario = sesion_db.scalar(

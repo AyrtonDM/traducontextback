@@ -1,4 +1,4 @@
-﻿from sqlalchemy import Boolean, String, Text
+from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -20,7 +20,12 @@ class Contexto(Base):
         default=True,
         nullable=False,
     )
+    id_usuario: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id"),
+        nullable=True,
+    )
 
+    usuario = relationship("Usuario", back_populates="contextos")
     configuraciones_traduccion = relationship(
         "ConfiguracionTraduccion",
         back_populates="contexto",

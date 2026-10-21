@@ -1,4 +1,4 @@
-﻿from sqlalchemy import String
+from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -11,6 +11,11 @@ class Idioma(Base):
     nombre: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     codigo: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)
 
+    variantes_regionales = relationship(
+        "VarianteRegional",
+        back_populates="idioma",
+        cascade="all, delete-orphan",
+    )
     traducciones_origen = relationship(
         "Traduccion",
         foreign_keys="Traduccion.id_idioma_origen",
