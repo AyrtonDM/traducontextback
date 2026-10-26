@@ -1,6 +1,13 @@
+from app.schemas.configuracion_traduccion import (
+    ConfiguracionTraduccionDetalle,
+    GuardarConfiguracionTraduccionSolicitud,
+    RespuestaConfiguracionTraduccion,
+)
 from app.schemas.contexto import (
     ContextoDetalle,
+    GuardarContextoSolicitud,
     ListaContextosRespuesta,
+    RespuestaContexto,
 )
 from app.schemas.idioma import (
     IdiomaDetalle,
@@ -37,8 +44,13 @@ from app.schemas.variante_regional import (
 
 
 __all__ = [
+    "ConfiguracionTraduccionDetalle",
+    "GuardarConfiguracionTraduccionSolicitud",
+    "RespuestaConfiguracionTraduccion",
     "ContextoDetalle",
+    "GuardarContextoSolicitud",
     "ListaContextosRespuesta",
+    "RespuestaContexto",
     "IdiomaDetalle",
     "ListaIdiomasRespuesta",
     "TonoDetalle",

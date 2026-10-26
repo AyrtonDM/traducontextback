@@ -7,7 +7,6 @@ class SolicitudTraduccion(BaseModel):
     texto_origen: str | None = None
     texto: str | None = None
     idioma_origen: str | None = None
-    id_contexto: int | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -42,8 +41,15 @@ class TraduccionResultado(BaseModel):
     idioma_destino: str
     traduccion: str
     confianza_deteccion: float | None = None
+    id_configuracion_traduccion: int | None = None
     id_contexto: int | None = None
     nombre_contexto: str | None = None
+    id_tono: int | None = None
+    nombre_tono: str | None = None
+    id_variante_regional: int | None = None
+    nombre_variante_regional: str | None = None
+    explicar_expresiones: bool = False
+    generar_alternativas: bool = False
     analisis_contextual: dict | None = None
 
 

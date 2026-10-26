@@ -4,9 +4,22 @@ from sqlalchemy.orm import Session
 
 from app.core.seguridad import requiere_token
 from app.database.conexion import obtener_sesion
+from app.models.traduccion.configuracion_traduccion import ConfiguracionTraduccion
 from app.models.traduccion.contexto import Contexto
+from app.models.traduccion.idioma import Idioma
+from app.models.traduccion.tono import Tono
+from app.models.traduccion.traduccion import Traduccion
+from app.models.traduccion.variante_regional import VarianteRegional
 from app.models.usuario.usuario import Usuario
-from app.schemas.contexto import ListaContextosRespuesta
+from app.schemas.configuracion_traduccion import (
+    GuardarConfiguracionTraduccionSolicitud,
+    RespuestaConfiguracionTraduccion,
+)
+from app.schemas.contexto import (
+    GuardarContextoSolicitud,
+    ListaContextosRespuesta,
+    RespuestaContexto,
+)
 from app.schemas.idioma import ListaIdiomasRespuesta
 from app.schemas.tono import ListaTonosRespuesta
 from app.schemas.traduccion import (
@@ -15,7 +28,12 @@ from app.schemas.traduccion import (
     TraduccionResultado,
 )
 from app.schemas.variante_regional import ListaVariantesRegionalesRespuesta
-from app.services.contextos import obtener_todos_contextos
+from app.services.configuracion_traduccion import (
+    armar_detalle_configuracion,
+    guardar_o_actualizar_configuracion,
+    obtener_configuracion_usuario,
+)
+from app.services.contextos import guardar_nuevo_contexto, obtener_todos_contextos
 from app.services.idiomas import obtener_todos_idiomas
 from app.services.motor_contextual import MotorContextual
 from app.services.tonos import obtener_todos_tonos
@@ -60,10 +78,49 @@ def listar_contextos_traduccion(
     usuario: Usuario = Depends(requiere_token),
     sesion: Session = Depends(obtener_sesion),
 ) -> ListaContextosRespuesta:
-    contextos = obtener_todos_contextos(sesion=sesion, solo_activos=True)
+    contextos = obtener_todos_contextos(
+        sesion=sesion,
+        solo_activos=True,
+        id_usuario=usuario.id,
+    )
     return ListaContextosRespuesta(
         mensaje="Contextos obtenidos correctamente.",
         resultado=contextos,
+    )
+
+
+@enrutador.post(
+    "/contextos",
+    response_model=RespuestaContexto,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(requiere_token)],
+    summary="Guardar contexto para traduccion (requiere token)",
+    description=(
+        "Crea y guarda un nuevo contexto personalizado en la tabla contexto. "
+        "Requiere cabecera 'Authorization: Bearer <token>'."
+    ),
+)
+def guardar_contexto_traduccion(
+    datos: GuardarContextoSolicitud,
+    usuario: Usuario = Depends(requiere_token),
+    sesion: Session = Depends(obtener_sesion),
+) -> RespuestaContexto:
+    try:
+        nuevo_contexto = guardar_nuevo_contexto(
+            sesion=sesion,
+            nombre=datos.nombre,
+            descripcion=datos.descripcion,
+            id_usuario=usuario.id,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    return RespuestaContexto(
+        mensaje="Contexto guardado correctamente.",
+        resultado=nuevo_contexto,
     )
 
 
@@ -120,15 +177,84 @@ def listar_variantes_regionales_traduccion(
 
 
 @enrutador.post(
+    "/configuracion",
+    response_model=RespuestaConfiguracionTraduccion,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(requiere_token)],
+    summary="Guardar o actualizar configuracion de traduccion (requiere token)",
+    description=(
+        "Guarda o actualiza la configuracion de traduccion del usuario autenticado. "
+        "Requiere cabecera 'Authorization: Bearer <token>'."
+    ),
+)
+def guardar_configuracion_traduccion(
+    datos: GuardarConfiguracionTraduccionSolicitud,
+    usuario: Usuario = Depends(requiere_token),
+    sesion: Session = Depends(obtener_sesion),
+) -> RespuestaConfiguracionTraduccion:
+    try:
+        config = guardar_o_actualizar_configuracion(
+            sesion=sesion,
+            id_usuario=usuario.id,
+            id_contexto=datos.id_contexto,
+            id_tono=datos.id_tono,
+            id_variante_regional=datos.id_variante_regional,
+            explicar_expresiones=datos.explicar_expresiones,
+            generar_alternativas=datos.generar_alternativas,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    detalle = armar_detalle_configuracion(config=config, sesion=sesion)
+    return RespuestaConfiguracionTraduccion(
+        mensaje="Configuracion guardada correctamente.",
+        resultado=detalle,
+    )
+
+
+@enrutador.get(
+    "/configuracion",
+    response_model=RespuestaConfiguracionTraduccion,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(requiere_token)],
+    summary="Obtener configuracion de traduccion (requiere token)",
+    description=(
+        "Retorna la configuracion de traduccion del usuario autenticado. "
+        "Requiere cabecera 'Authorization: Bearer <token>'."
+    ),
+)
+def obtener_configuracion_traduccion_endpoint(
+    usuario: Usuario = Depends(requiere_token),
+    sesion: Session = Depends(obtener_sesion),
+) -> RespuestaConfiguracionTraduccion:
+    config = obtener_configuracion_usuario(sesion=sesion, id_usuario=usuario.id)
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="El usuario no tiene una configuracion de traduccion registrada.",
+        )
+
+    detalle = armar_detalle_configuracion(config=config, sesion=sesion)
+    return RespuestaConfiguracionTraduccion(
+        mensaje="Configuracion obtenida correctamente.",
+        resultado=detalle,
+    )
+
+
+@enrutador.post(
     "",
     response_model=RespuestaTraduccion,
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(requiere_token)],
     summary="Traducir texto (requiere token)",
     description=(
-        "Traduce un texto especificando idioma de destino, idioma de origen (opcional) "
-        "e id de contexto (opcional). Si no se proporciona idioma de origen, se detecta "
-        "automaticamente. Requiere cabecera 'Authorization: Bearer <token>'."
+        "Traduce un texto especificando idioma de destino e idioma de origen (opcional). "
+        "Utiliza la configuracion de traduccion asociada al usuario autenticado. "
+        "Si no se proporciona idioma de origen, se detecta automaticamente. "
+        "Requiere cabecera 'Authorization: Bearer <token>'."
     ),
 )
 @enrutador.post(
@@ -143,23 +269,33 @@ def traducir(
     sesion: Session = Depends(obtener_sesion),
 ) -> RespuestaTraduccion:
 
+    # 1. Obtener configuracion de traduccion del usuario autenticado
+    config = sesion.scalar(
+        select(ConfiguracionTraduccion).where(
+            ConfiguracionTraduccion.id_usuario == usuario.id
+        )
+    )
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "El usuario no tiene una configuracion de traduccion registrada. "
+                "Debe guardar su configuracion previamente."
+            ),
+        )
+
+    # 2. Obtener datos del contexto, tono y variante de la configuracion
     nombre_contexto = None
     analisis_contextual = None
 
-    if solicitud.id_contexto is not None:
-        contexto_db = sesion.scalar(
-            select(Contexto).where(
-                Contexto.id_contexto == solicitud.id_contexto,
-                Contexto.activo.is_(True),
-            )
+    contexto_db = sesion.scalar(
+        select(Contexto).where(
+            Contexto.id_contexto == config.id_contexto,
+            Contexto.activo.is_(True),
         )
-        if not contexto_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Contexto con id {solicitud.id_contexto} no encontrado o inactivo.",
-            )
+    )
+    if contexto_db:
         nombre_contexto = contexto_db.nombre
-
         try:
             motor_contextual = MotorContextual()
             analisis = motor_contextual.analizar(
@@ -171,6 +307,19 @@ def traducir(
         except Exception:
             pass
 
+    tono_db = sesion.scalar(
+        select(Tono).where(Tono.id_tono == config.id_tono)
+    ) if config.id_tono else None
+    nombre_tono = tono_db.nombre if tono_db else None
+
+    variante_db = sesion.scalar(
+        select(VarianteRegional).where(
+            VarianteRegional.id_variante_regional == config.id_variante_regional
+        )
+    ) if config.id_variante_regional else None
+    nombre_variante = variante_db.nombre if variante_db else None
+
+    # 3. Realizar traduccion
     try:
         resultado = traducir_texto(
             texto_origen=solicitud.texto_origen,
@@ -183,6 +332,26 @@ def traducir(
             detail=str(error),
         ) from error
 
+    # 4. Guardar registro en la tabla traduccion si los idiomas existen en la base de datos
+    idioma_orig_db = sesion.scalar(
+        select(Idioma).where(Idioma.codigo == resultado["idioma_origen"])
+    )
+    idioma_dest_db = sesion.scalar(
+        select(Idioma).where(Idioma.codigo == resultado["idioma_destino"])
+    )
+
+    if idioma_orig_db and idioma_dest_db:
+        registro_traduccion = Traduccion(
+            texto_original=solicitud.texto_origen,
+            texto_traducido=resultado["traduccion"],
+            id_configuracion_traduccion=config.id_configuracion_traduccion,
+            id_idioma_origen=idioma_orig_db.id_idioma,
+            id_idioma_destino=idioma_dest_db.id_idioma,
+            id_usuario=usuario.id,
+        )
+        sesion.add(registro_traduccion)
+        sesion.commit()
+
     return RespuestaTraduccion(
         mensaje="Traduccion realizada correctamente.",
         resultado=TraduccionResultado(
@@ -191,8 +360,15 @@ def traducir(
             idioma_destino=resultado["idioma_destino"],
             traduccion=resultado["traduccion"],
             confianza_deteccion=resultado.get("confianza_deteccion"),
-            id_contexto=solicitud.id_contexto,
+            id_configuracion_traduccion=config.id_configuracion_traduccion,
+            id_contexto=config.id_contexto,
             nombre_contexto=nombre_contexto,
+            id_tono=config.id_tono,
+            nombre_tono=nombre_tono,
+            id_variante_regional=config.id_variante_regional,
+            nombre_variante_regional=nombre_variante,
+            explicar_expresiones=config.explicar_expresiones,
+            generar_alternativas=config.generar_alternativas,
             analisis_contextual=analisis_contextual,
         ),
     )

@@ -32,6 +32,8 @@ class ConfiguracionTraduccion(Base):
     )
     id_usuario: Mapped[int | None] = mapped_column(
         ForeignKey("usuario.id"),
+        unique=True,
+        index=True,
         nullable=True,
     )
 
