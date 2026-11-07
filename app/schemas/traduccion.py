@@ -35,6 +35,22 @@ class SolicitudTraduccion(BaseModel):
         return data
 
 
+class AlternativaTraduccion(BaseModel):
+    traduccion: str
+    explicacion: str | None = None
+
+
+class ExplicacionExpresion(BaseModel):
+    expresion: str
+    significado: str
+    equivalente: str | None = None
+
+
+class ResultadoEnriquecimiento(BaseModel):
+    alternativas: list[AlternativaTraduccion] = Field(default_factory=list)
+    explicacion_expresiones: list[ExplicacionExpresion] = Field(default_factory=list)
+
+
 class TraduccionResultado(BaseModel):
     texto_origen: str
     idioma_origen: str
@@ -50,6 +66,8 @@ class TraduccionResultado(BaseModel):
     nombre_variante_regional: str | None = None
     explicar_expresiones: bool = False
     generar_alternativas: bool = False
+    alternativas: list[AlternativaTraduccion] = Field(default_factory=list)
+    explicacion_expresiones: list[ExplicacionExpresion] = Field(default_factory=list)
     analisis_contextual: dict | None = None
 
 

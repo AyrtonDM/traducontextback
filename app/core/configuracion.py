@@ -30,7 +30,7 @@ class Configuracion(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_file=RUTA_BASE / ".env",
-        env_file_encoding="utf-8",
+        env_file_encoding="utf-8-sig",
         case_sensitive=False,
         extra="ignore",
     )

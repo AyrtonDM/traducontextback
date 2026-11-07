@@ -18,7 +18,10 @@ from app.schemas.tono import (
     ListaTonosRespuesta,
 )
 from app.schemas.traduccion import (
+    AlternativaTraduccion,
+    ExplicacionExpresion,
     RespuestaTraduccion,
+    ResultadoEnriquecimiento,
     SolicitudTraduccion,
     TraduccionResultado,
 )
@@ -60,6 +63,9 @@ __all__ = [
     "SolicitudTraduccion",
     "TraduccionResultado",
     "RespuestaTraduccion",
+    "AlternativaTraduccion",
+    "ExplicacionExpresion",
+    "ResultadoEnriquecimiento",
     "ReenviarCodigoRespuesta",
     "ReenviarCodigoResultado",
     "ReenviarCodigoSolicitud",

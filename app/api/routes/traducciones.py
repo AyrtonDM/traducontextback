@@ -34,6 +34,7 @@ from app.services.configuracion_traduccion import (
     obtener_configuracion_usuario,
 )
 from app.services.contextos import guardar_nuevo_contexto, obtener_todos_contextos
+from app.services.enriquecedor_traduccion import EnriquecedorTraduccion
 from app.services.idiomas import obtener_todos_idiomas
 from app.services.motor_contextual import MotorContextual
 from app.services.tonos import obtener_todos_tonos
@@ -45,6 +46,8 @@ enrutador = APIRouter(
     prefix="/traducciones",
     tags=["traducciones"],
 )
+
+enriquecedor_traduccion = EnriquecedorTraduccion()
 
 
 @enrutador.get(
@@ -332,7 +335,21 @@ def traducir(
             detail=str(error),
         ) from error
 
-    # 4. Guardar registro en la tabla traduccion si los idiomas existen en la base de datos
+    # 4. Enriquecer la traduccion con alternativas y explicacion de modismos segun configuracion
+    enriquecimiento = enriquecedor_traduccion.enriquecer(
+        texto_origen=resultado["texto_origen"],
+        idioma_origen=resultado["idioma_origen"],
+        idioma_destino=resultado["idioma_destino"],
+        traduccion_base=resultado["traduccion"],
+        nombre_contexto=nombre_contexto,
+        descripcion_contexto=contexto_db.descripcion if contexto_db else None,
+        nombre_tono=nombre_tono,
+        nombre_variante=nombre_variante,
+        generar_alternativas=config.generar_alternativas,
+        explicar_expresiones=config.explicar_expresiones,
+    )
+
+    # 5. Guardar registro en la tabla traduccion si los idiomas existen en la base de datos
     idioma_orig_db = sesion.scalar(
         select(Idioma).where(Idioma.codigo == resultado["idioma_origen"])
     )
@@ -369,6 +386,8 @@ def traducir(
             nombre_variante_regional=nombre_variante,
             explicar_expresiones=config.explicar_expresiones,
             generar_alternativas=config.generar_alternativas,
+            alternativas=enriquecimiento.alternativas,
+            explicacion_expresiones=enriquecimiento.explicacion_expresiones,
             analisis_contextual=analisis_contextual,
         ),
     )
