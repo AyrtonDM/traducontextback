@@ -38,6 +38,8 @@ class Usuario(Base):
         default="INACTIVO",
         nullable=False,
     )
+    # Ruta relativa (desde la raiz del backend) de la foto en documentos/fotos_perfil
+    foto_perfil: Mapped[str | None] = mapped_column(String(500), nullable=True)
     id_rol: Mapped[int] = mapped_column(ForeignKey("rol.id"), nullable=False)
 
     rol = relationship("Rol", back_populates="usuarios")

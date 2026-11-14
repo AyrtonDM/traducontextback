@@ -1,9 +1,9 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.configuracion_traduccion import ConfiguracionTraduccionDetalle
-from app.schemas.usuario import PATRON_CORREO, RolDetalle
+from app.schemas.usuario import RolDetalle
 
 
 class PerfilDetalle(BaseModel):
@@ -16,6 +16,7 @@ class PerfilDetalle(BaseModel):
     rol: RolDetalle
     fecha_creacion: datetime
     fecha_actualizacion: datetime | None = None
+    url_foto_perfil: str | None = None
     configuracion_traduccion: ConfiguracionTraduccionDetalle | None = None
 
 
@@ -25,40 +26,15 @@ class PerfilRespuesta(BaseModel):
 
 
 class ActualizarPerfilSolicitud(BaseModel):
-    nombre: str | None = Field(default=None, max_length=100, description="Nombre completo")
-    correo: str | None = Field(default=None, max_length=255, description="Correo electronico")
+    # El correo no es editable: se usa para la autenticacion de la cuenta
+    nombre: str = Field(max_length=100, description="Nombre completo")
 
     @field_validator("nombre")
     @classmethod
-    def validar_nombre(cls, valor: str | None) -> str | None:
-        if valor is None:
-            return None
-
+    def validar_nombre(cls, valor: str) -> str:
         valor = " ".join(valor.strip().split())
 
         if len(valor) < 2:
             raise ValueError("El nombre debe tener al menos 2 caracteres.")
 
         return valor
-
-    @field_validator("correo")
-    @classmethod
-    def validar_correo(cls, valor: str | None) -> str | None:
-        if valor is None:
-            return None
-
-        valor = valor.strip().lower()
-
-        if not PATRON_CORREO.fullmatch(valor):
-            raise ValueError("El correo no tiene un formato valido.")
-
-        return valor
-
-    @model_validator(mode="after")
-    def validar_algun_campo(self) -> "ActualizarPerfilSolicitud":
-        if self.nombre is None and self.correo is None:
-            raise ValueError(
-                "Debe enviar al menos un dato para actualizar (nombre o correo)."
-            )
-        return self
-
