@@ -1,3 +1,7 @@
+from app.models.documento import (
+    Documento,
+    TraduccionDocumento,
+)
 from app.models.traduccion import (
     ConfiguracionTraduccion,
     Contexto,
@@ -29,4 +33,6 @@ __all__ = [
     "Tono",
     "Traduccion",
     "VarianteRegional",
+    "Documento",
+    "TraduccionDocumento",
 ]

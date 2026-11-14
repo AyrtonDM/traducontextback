@@ -3,6 +3,15 @@ from app.schemas.configuracion_traduccion import (
     GuardarConfiguracionTraduccionSolicitud,
     RespuestaConfiguracionTraduccion,
 )
+from app.schemas.documento import (
+    DocumentoDetalle,
+    ListaDocumentosRespuesta,
+    ListaTraduccionesDocumentoRespuesta,
+    RespuestaSubirDocumento,
+    RespuestaTraduccionDocumento,
+    SolicitudTraducirDocumento,
+    TraduccionDocumentoDetalle,
+)
 from app.schemas.contexto import (
     ContextoDetalle,
     GuardarContextoSolicitud,
@@ -66,6 +75,13 @@ __all__ = [
     "AlternativaTraduccion",
     "ExplicacionExpresion",
     "ResultadoEnriquecimiento",
+    "DocumentoDetalle",
+    "RespuestaSubirDocumento",
+    "SolicitudTraducirDocumento",
+    "TraduccionDocumentoDetalle",
+    "RespuestaTraduccionDocumento",
+    "ListaDocumentosRespuesta",
+    "ListaTraduccionesDocumentoRespuesta",
     "ReenviarCodigoRespuesta",
     "ReenviarCodigoResultado",
     "ReenviarCodigoSolicitud",

@@ -64,3 +64,13 @@ class Usuario(Base):
         "ConfiguracionTraduccion",
         back_populates="usuario",
     )
+    documentos = relationship(
+        "Documento",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+    )
+    traducciones_documento = relationship(
+        "TraduccionDocumento",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+    )
