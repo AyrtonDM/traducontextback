@@ -19,9 +19,9 @@ class TraduccionDocumento(Base):
         nullable=False,
     )
     ruta_archivo: Mapped[str] = mapped_column(String(500), nullable=False)
-    id_documento: Mapped[int] = mapped_column(
-        ForeignKey("documento.id_documento"),
-        nullable=False,
+    id_documento: Mapped[int | None] = mapped_column(
+        ForeignKey("documento.id_documento", ondelete="SET NULL"),
+        nullable=True,
     )
     id_usuario: Mapped[int] = mapped_column(
         ForeignKey("usuario.id"),

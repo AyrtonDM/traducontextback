@@ -5,10 +5,11 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.rutas import enrutador
-from app.core.configuracion import configuracion
+from app.core.configuracion import RUTA_BASE, configuracion
 from app.database.inicializacion import inicializar_base_datos
 
 
@@ -28,6 +29,18 @@ app.add_middleware(
 )
 
 app.include_router(enrutador, prefix=configuracion.api_v1_prefix)
+
+# Servir archivos estaticos de documentos para acceso/descarga directa
+carpeta_documentos = RUTA_BASE / "documentos"
+carpeta_documentos.mkdir(parents=True, exist_ok=True)
+(carpeta_documentos / "original").mkdir(parents=True, exist_ok=True)
+(carpeta_documentos / "traducido").mkdir(parents=True, exist_ok=True)
+
+app.mount(
+    "/documentos",
+    StaticFiles(directory=str(carpeta_documentos)),
+    name="documentos",
+)
 
 
 @app.exception_handler(StarletteHTTPException)

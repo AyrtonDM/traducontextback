@@ -24,13 +24,29 @@ class Documento(Base):
         ForeignKey("usuario.id"),
         nullable=False,
     )
+    id_idioma_origen: Mapped[int | None] = mapped_column(
+        ForeignKey("idioma.id_idioma"),
+        nullable=True,
+    )
+    id_configuracion_traduccion: Mapped[int | None] = mapped_column(
+        ForeignKey("configuracion_traduccion.id_configuracion_traduccion"),
+        nullable=True,
+    )
 
     usuario = relationship(
         "Usuario",
         back_populates="documentos",
     )
+    idioma_origen = relationship(
+        "Idioma",
+        foreign_keys=[id_idioma_origen],
+        back_populates="documentos",
+    )
+    configuracion_traduccion = relationship(
+        "ConfiguracionTraduccion",
+        back_populates="documentos",
+    )
     traducciones_documento = relationship(
         "TraduccionDocumento",
         back_populates="documento",
-        cascade="all, delete-orphan",
     )

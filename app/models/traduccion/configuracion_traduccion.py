@@ -52,3 +52,7 @@ class ConfiguracionTraduccion(Base):
         back_populates="configuracion_traduccion",
         cascade="all, delete-orphan",
     )
+    documentos = relationship(
+        "Documento",
+        back_populates="configuracion_traduccion",
+    )

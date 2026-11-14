@@ -14,6 +14,10 @@ class DocumentoDetalle(BaseModel):
     ruta_archivo: str
     fecha_carga: datetime
     id_usuario: int
+    id_idioma_origen: int | None = None
+    codigo_idioma_origen: str | None = None
+    nombre_idioma_origen: str | None = None
+    id_configuracion_traduccion: int | None = None
 
 
 class RespuestaSubirDocumento(BaseModel):
@@ -33,7 +37,7 @@ class TraduccionDocumentoDetalle(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id_traduccion_documento: int
-    id_documento: int
+    id_documento: int | None = None
     nombre: str
     extension: str
     estado: str
@@ -44,6 +48,9 @@ class TraduccionDocumentoDetalle(BaseModel):
     id_idioma_destino: int
     codigo_idioma_origen: str | None = None
     codigo_idioma_destino: str | None = None
+    nombre_idioma_origen: str | None = None
+    nombre_idioma_destino: str | None = None
+    nombre_documento_original: str | None = None
     url_descarga: str | None = None
 
 
@@ -60,3 +67,9 @@ class ListaDocumentosRespuesta(BaseModel):
 class ListaTraduccionesDocumentoRespuesta(BaseModel):
     mensaje: str
     resultado: list[TraduccionDocumentoDetalle]
+
+
+class RespuestaEliminarDocumento(BaseModel):
+    mensaje: str
+    resultado: None = None
+

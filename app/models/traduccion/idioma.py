@@ -36,3 +36,8 @@ class Idioma(Base):
         foreign_keys="TraduccionDocumento.id_idioma_destino",
         back_populates="idioma_destino",
     )
+    documentos = relationship(
+        "Documento",
+        foreign_keys="Documento.id_idioma_origen",
+        back_populates="idioma_origen",
+    )

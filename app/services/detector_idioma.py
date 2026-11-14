@@ -15,7 +15,7 @@ class DetectorIdioma:
         self.modelo = fasttext.load_model(ruta_modelo)
 
     def detectar(self, texto: str) -> dict:
-        texto = texto.strip()
+        texto = " ".join(texto.replace("\n", " ").split()).strip()
 
         if not texto:
             raise ValueError("El texto no puede estar vacio.")
