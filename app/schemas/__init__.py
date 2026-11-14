@@ -22,6 +22,11 @@ from app.schemas.idioma import (
     IdiomaDetalle,
     ListaIdiomasRespuesta,
 )
+from app.schemas.perfil import (
+    ActualizarPerfilSolicitud,
+    PerfilDetalle,
+    PerfilRespuesta,
+)
 from app.schemas.tono import (
     TonoDetalle,
     ListaTonosRespuesta,
@@ -65,6 +70,9 @@ __all__ = [
     "RespuestaContexto",
     "IdiomaDetalle",
     "ListaIdiomasRespuesta",
+    "ActualizarPerfilSolicitud",
+    "PerfilDetalle",
+    "PerfilRespuesta",
     "TonoDetalle",
     "ListaTonosRespuesta",
     "VarianteRegionalDetalle",

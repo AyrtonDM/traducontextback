@@ -10,6 +10,7 @@ from app.api.routes.variantes_regionales import enrutador as enrutador_variantes
 from app.api.routes.configuracion_traduccion import (
     enrutador as enrutador_configuracion_traduccion,
 )
+from app.api.routes.perfil import enrutador as enrutador_perfil
 from app.api.routes.documentos import enrutador as enrutador_documentos
 
 enrutador = APIRouter()
@@ -21,4 +22,5 @@ enrutador.include_router(enrutador_contextos)
 enrutador.include_router(enrutador_tonos)
 enrutador.include_router(enrutador_variantes_regionales)
 enrutador.include_router(enrutador_configuracion_traduccion)
+enrutador.include_router(enrutador_perfil)
 enrutador.include_router(enrutador_documentos)
