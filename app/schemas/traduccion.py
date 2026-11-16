@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -74,3 +76,42 @@ class TraduccionResultado(BaseModel):
 class RespuestaTraduccion(BaseModel):
     mensaje: str
     resultado: TraduccionResultado
+
+
+class TraduccionHistorialDetalle(BaseModel):
+    id_traduccion: int
+    texto_original: str
+    texto_traducido: str
+    fecha_creacion: datetime
+    idioma_origen: str
+    idioma_destino: str
+    nombre_contexto: str | None = None
+    nombre_tono: str | None = None
+    nombre_variante_regional: str | None = None
+    explicar_expresiones: bool = False
+    generar_alternativas: bool = False
+    analisis_contextual: dict | None = None
+    favorito: bool = False
+
+
+class RespuestaHistorial(BaseModel):
+    mensaje: str
+    resultado: list[TraduccionHistorialDetalle]
+
+
+class SolicitudFavorito(BaseModel):
+    favorito: bool
+
+
+class FavoritoDetalle(BaseModel):
+    id_traduccion: int
+    favorito: bool
+
+
+class RespuestaFavorito(BaseModel):
+    mensaje: str
+    resultado: FavoritoDetalle
+
+
+class RespuestaEliminarTraduccion(BaseModel):
+    mensaje: str

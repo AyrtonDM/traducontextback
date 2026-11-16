@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,7 +25,12 @@ from app.schemas.contexto import (
 from app.schemas.idioma import ListaIdiomasRespuesta
 from app.schemas.tono import ListaTonosRespuesta
 from app.schemas.traduccion import (
+    FavoritoDetalle,
+    RespuestaEliminarTraduccion,
+    RespuestaFavorito,
+    RespuestaHistorial,
     RespuestaTraduccion,
+    SolicitudFavorito,
     SolicitudTraduccion,
     TraduccionResultado,
 )
@@ -35,6 +42,12 @@ from app.services.configuracion_traduccion import (
 )
 from app.services.contextos import guardar_nuevo_contexto, obtener_todos_contextos
 from app.services.enriquecedor_traduccion import EnriquecedorTraduccion
+from app.services.historial_traducciones import (
+    definir_favorito,
+    eliminar_traduccion,
+    listar_historial,
+    obtener_traduccion_usuario,
+)
 from app.services.idiomas import obtener_todos_idiomas
 from app.services.motor_contextual import MotorContextual
 from app.services.tonos import obtener_todos_tonos
@@ -391,3 +404,102 @@ def traducir(
             analisis_contextual=analisis_contextual,
         ),
     )
+
+
+@enrutador.get(
+    "/historial",
+    response_model=RespuestaHistorial,
+    status_code=status.HTTP_200_OK,
+    summary="Historial de traducciones del usuario (requiere token)",
+    description=(
+        "Lista las traducciones del usuario autenticado. Todos los filtros son opcionales "
+        "y se combinan (AND). fecha_hasta es inclusiva."
+    ),
+)
+def obtener_historial(
+    texto: str | None = Query(default=None, max_length=200),
+    idioma_origen: str | None = Query(default=None, max_length=10),
+    idioma_destino: str | None = Query(default=None, max_length=10),
+    fecha_desde: date | None = Query(default=None),
+    fecha_hasta: date | None = Query(default=None),
+    solo_favoritos: bool = Query(default=False),
+    usuario: Usuario = Depends(requiere_token),
+    sesion: Session = Depends(obtener_sesion),
+) -> RespuestaHistorial:
+    try:
+        historial = listar_historial(
+            sesion,
+            id_usuario=usuario.id,
+            texto=texto,
+            idioma_origen=idioma_origen,
+            idioma_destino=idioma_destino,
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta,
+            solo_favoritos=solo_favoritos,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    return RespuestaHistorial(
+        mensaje="Historial obtenido correctamente.",
+        resultado=historial,
+    )
+
+
+@enrutador.patch(
+    "/{id_traduccion}/favorito",
+    response_model=RespuestaFavorito,
+    status_code=status.HTTP_200_OK,
+    summary="Marcar o desmarcar traduccion como favorita (requiere token)",
+)
+def actualizar_favorito(
+    id_traduccion: int,
+    solicitud: SolicitudFavorito,
+    usuario: Usuario = Depends(requiere_token),
+    sesion: Session = Depends(obtener_sesion),
+) -> RespuestaFavorito:
+    traduccion = obtener_traduccion_usuario(sesion, id_traduccion, usuario.id)
+    if not traduccion:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Traduccion no encontrada.",
+        )
+
+    traduccion = definir_favorito(sesion, traduccion, solicitud.favorito)
+    mensaje = (
+        "Traduccion marcada como favorita."
+        if traduccion.favorito
+        else "Traduccion retirada de favoritos."
+    )
+    return RespuestaFavorito(
+        mensaje=mensaje,
+        resultado=FavoritoDetalle(
+            id_traduccion=traduccion.id_traduccion,
+            favorito=traduccion.favorito,
+        ),
+    )
+
+
+@enrutador.delete(
+    "/{id_traduccion}",
+    response_model=RespuestaEliminarTraduccion,
+    status_code=status.HTTP_200_OK,
+    summary="Eliminar traduccion del historial (requiere token)",
+)
+def eliminar_traduccion_historial(
+    id_traduccion: int,
+    usuario: Usuario = Depends(requiere_token),
+    sesion: Session = Depends(obtener_sesion),
+) -> RespuestaEliminarTraduccion:
+    traduccion = obtener_traduccion_usuario(sesion, id_traduccion, usuario.id)
+    if not traduccion:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Traduccion no encontrada.",
+        )
+
+    eliminar_traduccion(sesion, traduccion)
+    return RespuestaEliminarTraduccion(mensaje="Traduccion eliminada del historial.")
