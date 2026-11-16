@@ -34,6 +34,7 @@ class EnriquecedorTraduccion:
         nombre_variante: str | None = None,
         generar_alternativas: bool = False,
         explicar_expresiones: bool = False,
+        reglas_glosario: list[str] | None = None,
     ) -> ResultadoEnriquecimiento:
         if not generar_alternativas and not explicar_expresiones:
             return ResultadoEnriquecimiento(
@@ -50,6 +51,12 @@ class EnriquecedorTraduccion:
             detalles_contexto.append(f"Tono deseado: {nombre_tono}")
         if nombre_variante:
             detalles_contexto.append(f"Variante regional: {nombre_variante}")
+
+        if reglas_glosario:
+            detalles_contexto.append(
+                "Glosario obligatorio (respetalo tambien en las alternativas):\n  - "
+                + "\n  - ".join(reglas_glosario)
+            )
 
         contexto_str = "\n".join(detalles_contexto) if detalles_contexto else "Ninguno especificado"
 

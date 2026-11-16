@@ -16,7 +16,13 @@ from app.models.documento.documento import Documento
 from app.models.documento.traduccion_documento import TraduccionDocumento
 from app.models.traduccion.configuracion_traduccion import ConfiguracionTraduccion
 from app.models.traduccion.idioma import Idioma
+from app.services.aplicador_glosario import (
+    ReglaGlosario,
+    construir_reglas,
+    traducir_con_glosario,
+)
 from app.services.detector_idioma import DetectorIdioma
+from app.services.glosarios import obtener_glosario_para_traduccion
 from app.services.traduccion import detector_idioma, motor_nllb
 
 CARPETA_ORIGINAL = RUTA_BASE / "documentos" / "original"
@@ -137,11 +143,29 @@ def _extraer_muestra_texto(ruta_archivo: Path, extension: str) -> str:
     return ""
 
 
+def _traducir_segmento(
+    texto: str,
+    idioma_origen: str,
+    idioma_destino: str,
+    reglas: list[ReglaGlosario] | None,
+) -> str:
+    """Traduce un fragmento de documento aplicando las reglas del glosario (si hay)."""
+    traduccion, _ = traducir_con_glosario(
+        texto=texto,
+        idioma_origen=idioma_origen,
+        idioma_destino=idioma_destino,
+        reglas=reglas or [],
+        traducir=motor_nllb.traducir,
+    )
+    return traduccion
+
+
 def traducir_archivo_docx(
     ruta_entrada: Path,
     ruta_salida: Path,
     idioma_origen: str,
     idioma_destino: str,
+    reglas: list[ReglaGlosario] | None = None,
 ) -> None:
     doc = docx.Document(ruta_entrada)
 
@@ -150,7 +174,7 @@ def traducir_archivo_docx(
         for run in p.runs:
             texto = run.text
             if texto and texto.strip():
-                run.text = motor_nllb.traducir(texto, idioma_origen, idioma_destino)
+                run.text = _traducir_segmento(texto, idioma_origen, idioma_destino, reglas)
 
     # Traducir celdas de tablas
     for table in doc.tables:
@@ -160,7 +184,7 @@ def traducir_archivo_docx(
                     for run in p.runs:
                         texto = run.text
                         if texto and texto.strip():
-                            run.text = motor_nllb.traducir(texto, idioma_origen, idioma_destino)
+                            run.text = _traducir_segmento(texto, idioma_origen, idioma_destino, reglas)
 
     doc.save(ruta_salida)
 
@@ -170,6 +194,7 @@ def traducir_archivo_xlsx(
     ruta_salida: Path,
     idioma_origen: str,
     idioma_destino: str,
+    reglas: list[ReglaGlosario] | None = None,
 ) -> None:
     wb = openpyxl.load_workbook(ruta_entrada)
 
@@ -180,7 +205,7 @@ def traducir_archivo_xlsx(
                 if isinstance(cell.value, str):
                     val = cell.value
                     if val.strip() and not val.startswith("="):
-                        cell.value = motor_nllb.traducir(val, idioma_origen, idioma_destino)
+                        cell.value = _traducir_segmento(val, idioma_origen, idioma_destino, reglas)
 
     wb.save(ruta_salida)
 
@@ -221,6 +246,7 @@ def traducir_archivo_pdf(
     ruta_salida: Path,
     idioma_origen: str,
     idioma_destino: str,
+    reglas: list[ReglaGlosario] | None = None,
 ) -> None:
     """Traduce un archivo PDF reemplazando los bloques de texto en sus coordenadas y respetando el diseno/imagenes."""
     doc = pymupdf.open(ruta_entrada)
@@ -260,10 +286,11 @@ def traducir_archivo_pdf(
 
         # 1. Traducir textos y marcar redacciones sobre el texto original
         for item in bloques_a_procesar:
-            item["texto_traducido"] = motor_nllb.traducir(
+            item["texto_traducido"] = _traducir_segmento(
                 item["texto_original"],
                 idioma_origen,
                 idioma_destino,
+                reglas,
             )
             pagina.add_redact_annot(item["rect"])
 
@@ -290,6 +317,7 @@ def ejecutar_traduccion_documento(
     idioma_destino: str,
     idioma_origen: str | None,
     sesion: Session,
+    id_glosario: int | None = None,
 ) -> TraduccionDocumento:
     documento = sesion.scalar(
         select(Documento).where(
@@ -348,6 +376,18 @@ def ejecutar_traduccion_documento(
         if not idioma_orig_db:
             idioma_orig_db = sesion.scalar(select(Idioma))
 
+    # Glosario a aplicar (un solo glosario por traduccion, del mismo par de idiomas)
+    glosario = None
+    if id_glosario is not None:
+        glosario = obtener_glosario_para_traduccion(
+            sesion=sesion,
+            id_usuario=id_usuario,
+            id_glosario=id_glosario,
+            codigo_idioma_origen=idioma_orig_db.codigo,
+            codigo_idioma_destino=idioma_dest_db.codigo,
+        )
+    reglas = construir_reglas(glosario)
+
     # Definir nombre y ruta del archivo traducido
     nombre_traducido = f"traducido_{documento.nombre}"
     nombre_guardado_trad = f"{uuid.uuid4().hex}_{nombre_traducido}"
@@ -361,6 +401,7 @@ def ejecutar_traduccion_documento(
             ruta_salida=ruta_salida,
             idioma_origen=idioma_orig_db.codigo,
             idioma_destino=idioma_dest_db.codigo,
+            reglas=reglas,
         )
     elif extension == "xlsx":
         traducir_archivo_xlsx(
@@ -368,6 +409,7 @@ def ejecutar_traduccion_documento(
             ruta_salida=ruta_salida,
             idioma_origen=idioma_orig_db.codigo,
             idioma_destino=idioma_dest_db.codigo,
+            reglas=reglas,
         )
     elif extension == "pdf":
         traducir_archivo_pdf(
@@ -375,6 +417,7 @@ def ejecutar_traduccion_documento(
             ruta_salida=ruta_salida,
             idioma_origen=idioma_orig_db.codigo,
             idioma_destino=idioma_dest_db.codigo,
+            reglas=reglas,
         )
     else:
         raise ValueError(f"Formato de archivo .{extension} no soportado para traduccion. Solo se permiten .docx, .xlsx y .pdf.")
@@ -392,6 +435,7 @@ def ejecutar_traduccion_documento(
         id_usuario=id_usuario,
         id_idioma_origen=idioma_orig_db.id_idioma,
         id_idioma_destino=idioma_dest_db.id_idioma,
+        id_glosario=glosario.id_glosario if glosario else None,
     )
     sesion.add(registro_traduccion)
     sesion.commit()

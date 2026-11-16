@@ -33,7 +33,12 @@ from app.services.configuracion_traduccion import (
     guardar_o_actualizar_configuracion,
     obtener_configuracion_usuario,
 )
+from app.services.aplicador_glosario import construir_reglas, describir_reglas
 from app.services.contextos import guardar_nuevo_contexto, obtener_todos_contextos
+from app.services.glosarios import (
+    GlosarioNoEncontradoError,
+    obtener_glosario_para_traduccion,
+)
 from app.services.enriquecedor_traduccion import EnriquecedorTraduccion
 from app.services.idiomas import obtener_todos_idiomas
 from app.services.motor_contextual import MotorContextual
@@ -257,6 +262,8 @@ def obtener_configuracion_traduccion_endpoint(
         "Traduce un texto especificando idioma de destino e idioma de origen (opcional). "
         "Utiliza la configuracion de traduccion asociada al usuario autenticado. "
         "Si no se proporciona idioma de origen, se detecta automaticamente. "
+        "Opcionalmente acepta 'id_glosario' para aplicar un glosario personalizado del "
+        "mismo par de idiomas (traducciones preferidas y terminos a conservar). "
         "Requiere cabecera 'Authorization: Bearer <token>'."
     ),
 )
@@ -322,18 +329,41 @@ def traducir(
     ) if config.id_variante_regional else None
     nombre_variante = variante_db.nombre if variante_db else None
 
-    # 3. Realizar traduccion
+    # 3. Realizar traduccion (aplicando el glosario seleccionado, si lo hay)
+    glosario_usado = None
+
+    def obtener_reglas_glosario(codigo_origen: str, codigo_destino: str):
+        nonlocal glosario_usado
+        if solicitud.id_glosario is None:
+            return []
+        glosario_usado = obtener_glosario_para_traduccion(
+            sesion=sesion,
+            id_usuario=usuario.id,
+            id_glosario=solicitud.id_glosario,
+            codigo_idioma_origen=codigo_origen,
+            codigo_idioma_destino=codigo_destino,
+        )
+        return construir_reglas(glosario_usado)
+
     try:
         resultado = traducir_texto(
             texto_origen=solicitud.texto_origen,
             idioma_origen=solicitud.idioma_origen,
             idioma_destino=solicitud.idioma_destino,
+            obtener_reglas_glosario=obtener_reglas_glosario,
         )
+    except GlosarioNoEncontradoError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        ) from error
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(error),
         ) from error
+
+    reglas_glosario = construir_reglas(glosario_usado)
 
     # 4. Enriquecer la traduccion con alternativas y explicacion de modismos segun configuracion
     enriquecimiento = enriquecedor_traduccion.enriquecer(
@@ -347,6 +377,7 @@ def traducir(
         nombre_variante=nombre_variante,
         generar_alternativas=config.generar_alternativas,
         explicar_expresiones=config.explicar_expresiones,
+        reglas_glosario=describir_reglas(reglas_glosario),
     )
 
     # 5. Guardar registro en la tabla traduccion si los idiomas existen en la base de datos
@@ -365,6 +396,7 @@ def traducir(
             id_idioma_origen=idioma_orig_db.id_idioma,
             id_idioma_destino=idioma_dest_db.id_idioma,
             id_usuario=usuario.id,
+            id_glosario=glosario_usado.id_glosario if glosario_usado else None,
         )
         sesion.add(registro_traduccion)
         sesion.commit()
@@ -389,5 +421,8 @@ def traducir(
             alternativas=enriquecimiento.alternativas,
             explicacion_expresiones=enriquecimiento.explicacion_expresiones,
             analisis_contextual=analisis_contextual,
+            id_glosario=glosario_usado.id_glosario if glosario_usado else None,
+            nombre_glosario=glosario_usado.nombre if glosario_usado else None,
+            terminos_glosario_aplicados=resultado.get("terminos_glosario_aplicados", []),
         ),
     )

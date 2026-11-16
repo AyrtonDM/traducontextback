@@ -22,6 +22,7 @@ from app.schemas.documento import (
     SolicitudTraducirDocumento,
     TraduccionDocumentoDetalle,
 )
+from app.services.glosarios import GlosarioNoEncontradoError
 from app.services.traduccion_documentos import (
     ejecutar_traduccion_documento,
     guardar_documento_subido,
@@ -96,7 +97,8 @@ def subir_documento(
     description=(
         "Toma un documento existente del usuario, traduce su contenido respetando el formato original "
         "e imagenes, genera el archivo traducido en 'documentos/traducido' y registra "
-        "la entrada correspondiente en la tabla 'traduccion_documento'."
+        "la entrada correspondiente en la tabla 'traduccion_documento'. "
+        "Opcionalmente acepta 'id_glosario' para aplicar un glosario del mismo par de idiomas."
     ),
 )
 def traducir_documento(
@@ -111,7 +113,13 @@ def traducir_documento(
             idioma_destino=solicitud.idioma_destino,
             idioma_origen=solicitud.idioma_origen,
             sesion=sesion,
+            id_glosario=solicitud.id_glosario,
         )
+    except GlosarioNoEncontradoError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        ) from error
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -139,6 +147,8 @@ def traducir_documento(
         codigo_idioma_origen=idioma_orig.codigo if idioma_orig else None,
         codigo_idioma_destino=idioma_dest.codigo if idioma_dest else None,
         url_descarga=trad.ruta_archivo,
+        id_glosario=trad.id_glosario,
+        nombre_glosario=trad.glosario.nombre if trad.glosario else None,
     )
 
     return RespuestaTraduccionDocumento(
@@ -285,6 +295,7 @@ def listar_documentos_traducidos_usuario(
                 nombre_idioma_destino=idioma_dest.nombre if idioma_dest else None,
                 nombre_documento_original=doc_orig.nombre if doc_orig else None,
                 url_descarga=t.ruta_archivo,
+                id_glosario=t.id_glosario,
             )
         )
 
@@ -345,6 +356,7 @@ def listar_traducciones_de_documento(
                 nombre_idioma_destino=idioma_dest.nombre if idioma_dest else None,
                 nombre_documento_original=documento.nombre,
                 url_descarga=t.ruta_archivo,
+                id_glosario=t.id_glosario,
             )
         )
 

@@ -31,6 +31,7 @@ class SolicitudTraducirDocumento(BaseModel):
     idioma_origen: str | None = None
     id_idioma_destino: int | None = None
     id_idioma_origen: int | None = None
+    id_glosario: int | None = None
 
 
 class TraduccionDocumentoDetalle(BaseModel):
@@ -52,6 +53,8 @@ class TraduccionDocumentoDetalle(BaseModel):
     nombre_idioma_destino: str | None = None
     nombre_documento_original: str | None = None
     url_descarga: str | None = None
+    id_glosario: int | None = None
+    nombre_glosario: str | None = None
 
 
 class RespuestaTraduccionDocumento(BaseModel):
