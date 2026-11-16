@@ -2,6 +2,10 @@ from app.models.documento import (
     Documento,
     TraduccionDocumento,
 )
+from app.models.glosario import (
+    Glosario,
+    TerminoGlosario,
+)
 from app.models.traduccion import (
     ConfiguracionTraduccion,
     Contexto,
@@ -35,4 +39,6 @@ __all__ = [
     "VarianteRegional",
     "Documento",
     "TraduccionDocumento",
+    "Glosario",
+    "TerminoGlosario",
 ]

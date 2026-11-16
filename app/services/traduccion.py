@@ -1,4 +1,7 @@
+from collections.abc import Callable
+
 from app.core.configuracion import RUTA_BASE
+from app.services.aplicador_glosario import ReglaGlosario, traducir_con_glosario
 from app.services.detector_idioma import DetectorIdioma
 from app.services.motor_nllb import MotorNLLB
 
@@ -13,7 +16,13 @@ def traducir_texto(
     texto_origen: str,
     idioma_origen: str | None,
     idioma_destino: str,
+    obtener_reglas_glosario: Callable[[str, str], list[ReglaGlosario]] | None = None,
 ) -> dict:
+    """
+    Traduce un texto. Si se indica `obtener_reglas_glosario`, se invoca con el par
+    de idiomas ya resuelto (origen detectado o indicado, destino) y las reglas
+    retornadas se aplican durante la traduccion.
+    """
 
     texto_origen = texto_origen.strip()
 
@@ -40,10 +49,18 @@ def traducir_texto(
     else:
         idioma_origen = str(idioma_origen).strip().lower()
 
-    traduccion = motor_nllb.traducir(
+    reglas = (
+        obtener_reglas_glosario(idioma_origen, idioma_destino)
+        if obtener_reglas_glosario
+        else []
+    )
+
+    traduccion, terminos_aplicados = traducir_con_glosario(
         texto=texto_origen,
         idioma_origen=idioma_origen,
         idioma_destino=idioma_destino,
+        reglas=reglas,
+        traducir=motor_nllb.traducir,
     )
 
     return {
@@ -52,4 +69,5 @@ def traducir_texto(
         "idioma_destino": idioma_destino,
         "traduccion": traduccion,
         "confianza_deteccion": confianza_deteccion,
+        "terminos_glosario_aplicados": terminos_aplicados,
     }

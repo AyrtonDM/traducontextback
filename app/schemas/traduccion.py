@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.glosario import TerminoAplicado
+
 
 class SolicitudTraduccion(BaseModel):
     idioma_destino: str
@@ -9,6 +11,10 @@ class SolicitudTraduccion(BaseModel):
     texto_origen: str | None = None
     texto: str | None = None
     idioma_origen: str | None = None
+    id_glosario: int | None = Field(
+        default=None,
+        description="Glosario a aplicar (debe ser del mismo par de idiomas)",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -71,6 +77,9 @@ class TraduccionResultado(BaseModel):
     alternativas: list[AlternativaTraduccion] = Field(default_factory=list)
     explicacion_expresiones: list[ExplicacionExpresion] = Field(default_factory=list)
     analisis_contextual: dict | None = None
+    id_glosario: int | None = None
+    nombre_glosario: str | None = None
+    terminos_glosario_aplicados: list[TerminoAplicado] = Field(default_factory=list)
 
 
 class RespuestaTraduccion(BaseModel):

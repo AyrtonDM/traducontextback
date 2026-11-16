@@ -35,6 +35,11 @@ class TraduccionDocumento(Base):
         ForeignKey("idioma.id_idioma"),
         nullable=False,
     )
+    # Un solo glosario por traduccion (si se elimina el glosario, se conserva la traduccion)
+    id_glosario: Mapped[int | None] = mapped_column(
+        ForeignKey("glosario.id_glosario", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     documento = relationship(
         "Documento",
@@ -53,4 +58,8 @@ class TraduccionDocumento(Base):
         "Idioma",
         foreign_keys=[id_idioma_destino],
         back_populates="documentos_destino",
+    )
+    glosario = relationship(
+        "Glosario",
+        back_populates="traducciones_documento",
     )

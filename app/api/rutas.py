@@ -12,6 +12,7 @@ from app.api.routes.configuracion_traduccion import (
 )
 from app.api.routes.perfil import enrutador as enrutador_perfil
 from app.api.routes.documentos import enrutador as enrutador_documentos
+from app.api.routes.glosarios import enrutador as enrutador_glosarios
 
 enrutador = APIRouter()
 enrutador.include_router(enrutador_usuarios)
@@ -24,3 +25,4 @@ enrutador.include_router(enrutador_variantes_regionales)
 enrutador.include_router(enrutador_configuracion_traduccion)
 enrutador.include_router(enrutador_perfil)
 enrutador.include_router(enrutador_documentos)
+enrutador.include_router(enrutador_glosarios)

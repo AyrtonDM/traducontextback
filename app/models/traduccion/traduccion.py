@@ -39,6 +39,11 @@ class Traduccion(Base):
         ForeignKey("usuario.id"),
         nullable=False,
     )
+    # Un solo glosario por traduccion (si se elimina el glosario, se conserva la traduccion)
+    id_glosario: Mapped[int | None] = mapped_column(
+        ForeignKey("glosario.id_glosario", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     configuracion_traduccion = relationship(
         "ConfiguracionTraduccion",
@@ -56,5 +61,9 @@ class Traduccion(Base):
     )
     usuario = relationship(
         "Usuario",
+        back_populates="traducciones",
+    )
+    glosario = relationship(
+        "Glosario",
         back_populates="traducciones",
     )
