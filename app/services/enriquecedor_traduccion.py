@@ -1,25 +1,46 @@
 import logging
+from dataclasses import dataclass
+
 from openai import OpenAI
 
 from app.core.configuracion import configuracion
+from app.schemas.glosario import TerminoAplicado
 from app.schemas.traduccion import (
     AlternativaTraduccion,
     ExplicacionExpresion,
     ResultadoEnriquecimiento,
 )
+from app.services.aplicador_glosario import respeta_terminos_glosario
 
 logger = logging.getLogger(__name__)
+
+# Tiempo maximo (segundos) de espera al modelo de lenguaje. Si se supera, se usa la traduccion base (NLLB).
+TIEMPO_MAXIMO_LLM_SEGUNDOS = 15.0
+
+
+@dataclass
+class EnriquecimientoProcesado:
+    """Resultado del enriquecimiento junto con el estado de la llamada al modelo."""
+
+    resultado: ResultadoEnriquecimiento
+    # True solo si se llamo al modelo y respondio correctamente
+    procesado: bool = False
+    # True si se solicito adaptar a la region pero la adaptacion no pudo usarse (error o glosario incumplido)
+    adaptacion_fallida: bool = False
 
 
 class EnriquecedorTraduccion:
     """
-    Servicio encargado de generar alternativas de traduccion y explicar modismos/expresiones
-    utilizando el modelo de lenguaje de acuerdo a la configuracion activa del usuario.
+    Servicio encargado de adaptar la traduccion a la variante regional, generar alternativas de
+    traduccion y explicar modismos/expresiones utilizando el modelo de lenguaje de acuerdo a la
+    configuracion activa del usuario.
     """
 
     def __init__(self):
         self.cliente = OpenAI(
-            api_key=configuracion.openai_api_key
+            api_key=configuracion.openai_api_key,
+            timeout=TIEMPO_MAXIMO_LLM_SEGUNDOS,
+            max_retries=0,
         )
 
     def enriquecer(
@@ -35,14 +56,33 @@ class EnriquecedorTraduccion:
         generar_alternativas: bool = False,
         explicar_expresiones: bool = False,
         reglas_glosario: list[str] | None = None,
-    ) -> ResultadoEnriquecimiento:
-        if not generar_alternativas and not explicar_expresiones:
-            return ResultadoEnriquecimiento(
-                alternativas=[],
-                explicacion_expresiones=[],
-            )
+        adaptar_region: bool = False,
+        terminos_glosario_aplicados: list[TerminoAplicado] | None = None,
+        adaptar_estilo: bool = False,
+        tiempo_maximo: float | None = None,
+        nombre_entorno: str | None = None,
+    ) -> EnriquecimientoProcesado:
+        """
+        `adaptar_estilo` (conversaciones) reescribe la traduccion base segun tono, contexto y descripcion;
+        solo aplica si alguno esta definido y no se adapta a una region. `tiempo_maximo` sustituye el
+        tiempo de espera por defecto del modelo. Con los valores por defecto el comportamiento no cambia.
+        """
+        adaptar_region = adaptar_region and bool(nombre_variante)
+        adaptar_estilo = (
+            adaptar_estilo
+            and not adaptar_region
+            and bool(nombre_tono or nombre_contexto or descripcion_contexto)
+        )
+        # Cualquier adaptacion de la traduccion base se devuelve en 'traduccion_adaptada'
+        adaptar_traduccion = adaptar_region or adaptar_estilo
+
+        if not generar_alternativas and not explicar_expresiones and not adaptar_traduccion:
+            return EnriquecimientoProcesado(resultado=ResultadoEnriquecimiento())
 
         detalles_contexto = []
+        # Entorno de la conversacion (HU-24): catalogo distinto del contexto de dominio (HU-13)
+        if nombre_entorno:
+            detalles_contexto.append(f"Entorno de la conversacion: {nombre_entorno}")
         if nombre_contexto:
             detalles_contexto.append(f"Contexto: {nombre_contexto}")
         if descripcion_contexto:
@@ -54,18 +94,43 @@ class EnriquecedorTraduccion:
 
         if reglas_glosario:
             detalles_contexto.append(
-                "Glosario obligatorio (respetalo tambien en las alternativas):\n  - "
+                "Glosario obligatorio (respetalo en la traduccion adaptada y en las alternativas):\n  - "
                 + "\n  - ".join(reglas_glosario)
             )
 
         contexto_str = "\n".join(detalles_contexto) if detalles_contexto else "Ninguno especificado"
 
         instrucciones = []
-        if generar_alternativas:
+        if adaptar_region:
             instrucciones.append(
-                "- generar_alternativas=True: Proporciona entre 2 y 3 alternativas de traduccion al idioma de destino "
-                "que ofrezcan opciones validas, matices o sinonimos acordes al contexto, tono y variante. "
-                "Incluye una breve explicacion del matiz en el campo 'explicacion'."
+                f"- adaptar_region=True: Reescribe la 'Traduccion base' adaptando el vocabulario y las expresiones "
+                f"a la variante regional '{nombre_variante}' solo donde existan diferencias regionales; si no hay "
+                "diferencias, devuelvela igual. Conserva el significado y no agregues ni quites informacion. "
+                "Los terminos del glosario deben aparecer exactamente igual que en la traduccion base. "
+                "Coloca el resultado en 'traduccion_adaptada'."
+            )
+        elif adaptar_estilo:
+            instrucciones.append(
+                "- adaptar_estilo=True: Reescribe la 'Traduccion base' en el idioma de destino ajustando el registro "
+                "y la terminologia al entorno, tono, contexto y descripcion indicados en la configuracion adicional. Conserva "
+                "el significado, la intencion y la persona gramatical; no agregues ni quites informacion ni respondas "
+                "al mensaje. Los terminos del glosario deben aparecer exactamente igual que en la traduccion base. "
+                "Coloca el resultado en 'traduccion_adaptada'."
+            )
+        else:
+            instrucciones.append(
+                "- adaptar_region=False: Deja 'traduccion_adaptada' en null."
+            )
+
+        if generar_alternativas:
+            base_alternativas = (
+                "la 'traduccion_adaptada'" if adaptar_traduccion else "la 'Traduccion base'"
+            )
+            instrucciones.append(
+                "- generar_alternativas=True: Proporciona al menos 2 y como maximo 3 alternativas de traduccion al "
+                f"idioma de destino, tomando como traduccion principal {base_alternativas}. Deben ser distintas de "
+                "la traduccion principal, mantener su significado y ofrecer matices o sinonimos acordes al contexto, "
+                "tono y variante. Incluye una breve explicacion del matiz en el campo 'explicacion'."
             )
         else:
             instrucciones.append(
@@ -99,15 +164,20 @@ class EnriquecedorTraduccion:
         )
 
         try:
-            respuesta = self.cliente.responses.parse(
+            cliente = (
+                self.cliente.with_options(timeout=tiempo_maximo)
+                if tiempo_maximo is not None
+                else self.cliente
+            )
+            respuesta = cliente.responses.parse(
                 model="gpt-5.6-luna",
                 input=[
                     {
                         "role": "system",
                         "content": (
                             "Eres un asistente linguistico especializado en traduccion, analisis semantico, "
-                            "modismos y adaptacion contextual de textos. Responde siempre respetando estrictamente "
-                            "el esquema de salida solicitado."
+                            "modismos y adaptacion contextual y regional de textos. Responde siempre respetando "
+                            "estrictamente el esquema de salida solicitado."
                         ),
                     },
                     {
@@ -117,13 +187,42 @@ class EnriquecedorTraduccion:
                 ],
                 text_format=ResultadoEnriquecimiento,
             )
-            return respuesta.output_parsed
+            resultado = respuesta.output_parsed
+            if resultado is None:
+                raise ValueError("El modelo no devolvio una respuesta con el formato esperado.")
         except Exception as error:
             logger.warning(
-                "No se pudo enriquecer la traduccion con alternativas o modismos: %s",
+                "No se pudo enriquecer la traduccion (adaptacion regional, alternativas o modismos): %s",
                 error,
             )
-            return ResultadoEnriquecimiento(
-                alternativas=[],
-                explicacion_expresiones=[],
+            return EnriquecimientoProcesado(
+                resultado=ResultadoEnriquecimiento(),
+                procesado=False,
+                adaptacion_fallida=adaptar_traduccion,
             )
+
+        adaptacion_fallida = False
+        if not adaptar_traduccion:
+            resultado.traduccion_adaptada = None
+        else:
+            adaptada = (resultado.traduccion_adaptada or "").strip()
+            if not adaptada:
+                adaptacion_fallida = True
+            elif not respeta_terminos_glosario(
+                texto_adaptado=adaptada,
+                texto_base=traduccion_base,
+                terminos_aplicados=terminos_glosario_aplicados or [],
+            ):
+                logger.warning(
+                    "La adaptacion (regional o de estilo) no respeto los terminos del glosario; "
+                    "se usa la traduccion base."
+                )
+                adaptacion_fallida = True
+
+            resultado.traduccion_adaptada = None if adaptacion_fallida else adaptada
+
+        return EnriquecimientoProcesado(
+            resultado=resultado,
+            procesado=True,
+            adaptacion_fallida=adaptacion_fallida,
+        )

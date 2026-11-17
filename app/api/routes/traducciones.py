@@ -8,7 +8,6 @@ from app.core.seguridad import requiere_token
 from app.database.conexion import obtener_sesion
 from app.models.traduccion.configuracion_traduccion import ConfiguracionTraduccion
 from app.models.traduccion.contexto import Contexto
-from app.models.traduccion.idioma import Idioma
 from app.models.traduccion.tono import Tono
 from app.models.traduccion.traduccion import Traduccion
 from app.models.traduccion.variante_regional import VarianteRegional
@@ -40,13 +39,8 @@ from app.services.configuracion_traduccion import (
     guardar_o_actualizar_configuracion,
     obtener_configuracion_usuario,
 )
-from app.services.aplicador_glosario import construir_reglas, describir_reglas
 from app.services.contextos import guardar_nuevo_contexto, obtener_todos_contextos
-from app.services.glosarios import (
-    GlosarioNoEncontradoError,
-    obtener_glosario_para_traduccion,
-)
-from app.services.enriquecedor_traduccion import EnriquecedorTraduccion
+from app.services.glosarios import GlosarioNoEncontradoError
 from app.services.historial_traducciones import (
     definir_favorito,
     eliminar_traduccion,
@@ -54,9 +48,8 @@ from app.services.historial_traducciones import (
     obtener_traduccion_usuario,
 )
 from app.services.idiomas import obtener_todos_idiomas
-from app.services.motor_contextual import MotorContextual
 from app.services.tonos import obtener_todos_tonos
-from app.services.traduccion import traducir_texto
+from app.services.traduccion_contextual import traducir_con_configuracion
 from app.services.variantes_regionales import obtener_todas_variantes_regionales
 
 
@@ -64,8 +57,6 @@ enrutador = APIRouter(
     prefix="/traducciones",
     tags=["traducciones"],
 )
-
-enriquecedor_traduccion = EnriquecedorTraduccion()
 
 
 @enrutador.get(
@@ -222,6 +213,7 @@ def guardar_configuracion_traduccion(
             id_variante_regional=datos.id_variante_regional,
             explicar_expresiones=datos.explicar_expresiones,
             generar_alternativas=datos.generar_alternativas,
+            idioma_destino=datos.idioma_destino,
         )
     except ValueError as error:
         raise HTTPException(
@@ -308,27 +300,13 @@ def traducir(
         )
 
     # 2. Obtener datos del contexto, tono y variante de la configuracion
-    nombre_contexto = None
-    analisis_contextual = None
-
     contexto_db = sesion.scalar(
         select(Contexto).where(
             Contexto.id_contexto == config.id_contexto,
             Contexto.activo.is_(True),
         )
     )
-    if contexto_db:
-        nombre_contexto = contexto_db.nombre
-        try:
-            motor_contextual = MotorContextual()
-            analisis = motor_contextual.analizar(
-                contexto=contexto_db.descripcion or contexto_db.nombre,
-                texto=solicitud.texto_origen,
-            )
-            if hasattr(analisis, "model_dump"):
-                analisis_contextual = analisis.model_dump()
-        except Exception:
-            pass
+    nombre_contexto = contexto_db.nombre if contexto_db else None
 
     tono_db = sesion.scalar(
         select(Tono).where(Tono.id_tono == config.id_tono)
@@ -342,28 +320,22 @@ def traducir(
     ) if config.id_variante_regional else None
     nombre_variante = variante_db.nombre if variante_db else None
 
-    # 3. Realizar traduccion (aplicando el glosario seleccionado, si lo hay)
-    glosario_usado = None
-
-    def obtener_reglas_glosario(codigo_origen: str, codigo_destino: str):
-        nonlocal glosario_usado
-        if solicitud.id_glosario is None:
-            return []
-        glosario_usado = obtener_glosario_para_traduccion(
+    # 3. Traduccion central: glosario, localizacion regional y enriquecimiento segun configuracion
+    try:
+        traduccion = traducir_con_configuracion(
             sesion=sesion,
             id_usuario=usuario.id,
-            id_glosario=solicitud.id_glosario,
-            codigo_idioma_origen=codigo_origen,
-            codigo_idioma_destino=codigo_destino,
-        )
-        return construir_reglas(glosario_usado)
-
-    try:
-        resultado = traducir_texto(
-            texto_origen=solicitud.texto_origen,
+            texto=solicitud.texto_origen,
             idioma_origen=solicitud.idioma_origen,
             idioma_destino=solicitud.idioma_destino,
-            obtener_reglas_glosario=obtener_reglas_glosario,
+            nombre_contexto=nombre_contexto,
+            descripcion_contexto=contexto_db.descripcion if contexto_db else None,
+            nombre_tono=nombre_tono,
+            variante=variante_db,
+            id_glosario=solicitud.id_glosario,
+            generar_alternativas=config.generar_alternativas,
+            explicar_expresiones=config.explicar_expresiones,
+            analizar_contexto=contexto_db is not None,
         )
     except GlosarioNoEncontradoError as error:
         raise HTTPException(
@@ -376,38 +348,17 @@ def traducir(
             detail=str(error),
         ) from error
 
-    reglas_glosario = construir_reglas(glosario_usado)
+    glosario_usado = traduccion.glosario_usado
+    enriquecimiento = traduccion.enriquecimiento
 
-    # 4. Enriquecer la traduccion con alternativas y explicacion de modismos segun configuracion
-    enriquecimiento = enriquecedor_traduccion.enriquecer(
-        texto_origen=resultado["texto_origen"],
-        idioma_origen=resultado["idioma_origen"],
-        idioma_destino=resultado["idioma_destino"],
-        traduccion_base=resultado["traduccion"],
-        nombre_contexto=nombre_contexto,
-        descripcion_contexto=contexto_db.descripcion if contexto_db else None,
-        nombre_tono=nombre_tono,
-        nombre_variante=nombre_variante,
-        generar_alternativas=config.generar_alternativas,
-        explicar_expresiones=config.explicar_expresiones,
-        reglas_glosario=describir_reglas(reglas_glosario),
-    )
-
-    # 5. Guardar registro en la tabla traduccion si los idiomas existen en la base de datos
-    idioma_orig_db = sesion.scalar(
-        select(Idioma).where(Idioma.codigo == resultado["idioma_origen"])
-    )
-    idioma_dest_db = sesion.scalar(
-        select(Idioma).where(Idioma.codigo == resultado["idioma_destino"])
-    )
-
-    if idioma_orig_db and idioma_dest_db:
+    # 4. Guardar registro en la tabla traduccion si los idiomas existen en la base de datos
+    if traduccion.id_idioma_origen and traduccion.id_idioma_destino:
         registro_traduccion = Traduccion(
             texto_original=solicitud.texto_origen,
-            texto_traducido=resultado["traduccion"],
+            texto_traducido=traduccion.traduccion,
             id_configuracion_traduccion=config.id_configuracion_traduccion,
-            id_idioma_origen=idioma_orig_db.id_idioma,
-            id_idioma_destino=idioma_dest_db.id_idioma,
+            id_idioma_origen=traduccion.id_idioma_origen,
+            id_idioma_destino=traduccion.id_idioma_destino,
             id_usuario=usuario.id,
             id_glosario=glosario_usado.id_glosario if glosario_usado else None,
         )
@@ -417,11 +368,11 @@ def traducir(
     return RespuestaTraduccion(
         mensaje="Traduccion realizada correctamente.",
         resultado=TraduccionResultado(
-            texto_origen=resultado["texto_origen"],
-            idioma_origen=resultado["idioma_origen"],
-            idioma_destino=resultado["idioma_destino"],
-            traduccion=resultado["traduccion"],
-            confianza_deteccion=resultado.get("confianza_deteccion"),
+            texto_origen=traduccion.texto_origen,
+            idioma_origen=traduccion.idioma_origen,
+            idioma_destino=traduccion.idioma_destino,
+            traduccion=traduccion.traduccion,
+            confianza_deteccion=traduccion.confianza_deteccion,
             id_configuracion_traduccion=config.id_configuracion_traduccion,
             id_contexto=config.id_contexto,
             nombre_contexto=nombre_contexto,
@@ -429,14 +380,17 @@ def traducir(
             nombre_tono=nombre_tono,
             id_variante_regional=config.id_variante_regional,
             nombre_variante_regional=nombre_variante,
+            region_aplicada=traduccion.region_aplicada,
+            estado_region=traduccion.estado_region,
             explicar_expresiones=config.explicar_expresiones,
+            explicaciones_procesadas=config.explicar_expresiones and enriquecimiento.procesado,
             generar_alternativas=config.generar_alternativas,
-            alternativas=enriquecimiento.alternativas,
-            explicacion_expresiones=enriquecimiento.explicacion_expresiones,
-            analisis_contextual=analisis_contextual,
+            alternativas=enriquecimiento.resultado.alternativas,
+            explicacion_expresiones=enriquecimiento.resultado.explicacion_expresiones,
+            analisis_contextual=traduccion.analisis_contextual,
             id_glosario=glosario_usado.id_glosario if glosario_usado else None,
             nombre_glosario=glosario_usado.nombre if glosario_usado else None,
-            terminos_glosario_aplicados=resultado.get("terminos_glosario_aplicados", []),
+            terminos_glosario_aplicados=traduccion.terminos_glosario_aplicados,
         ),
     )
 

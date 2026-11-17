@@ -48,6 +48,7 @@ def guardar_configuracion(
             id_variante_regional=datos.id_variante_regional,
             explicar_expresiones=datos.explicar_expresiones,
             generar_alternativas=datos.generar_alternativas,
+            idioma_destino=datos.idioma_destino,
         )
     except ValueError as error:
         raise HTTPException(

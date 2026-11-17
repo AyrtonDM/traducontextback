@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.models.traduccion.configuracion_traduccion import ConfiguracionTraduccion
 from app.models.traduccion.contexto import Contexto
+from app.models.traduccion.idioma import Idioma
 from app.models.traduccion.tono import Tono
 from app.models.traduccion.variante_regional import VarianteRegional
 from app.schemas.configuracion_traduccion import ConfiguracionTraduccionDetalle
@@ -66,8 +67,12 @@ def guardar_o_actualizar_configuracion(
     id_variante_regional: int | None = None,
     explicar_expresiones: bool = False,
     generar_alternativas: bool = False,
+    idioma_destino: str | None = None,
 ) -> ConfiguracionTraduccion:
-    """Guarda una nueva configuracion o actualiza la existente para el usuario."""
+    """
+    Guarda una nueva configuracion o actualiza la existente para el usuario.
+    Si se indica `idioma_destino`, valida que la variante regional corresponda a ese idioma.
+    """
     # 1. Validar contexto
     contexto = sesion.scalar(
         select(Contexto).where(
@@ -100,6 +105,18 @@ def guardar_o_actualizar_configuracion(
             raise ValueError(
                 f"Variante regional con id {id_variante_regional} no encontrada o inactiva."
             )
+
+        # 3.1 Validar que la variante corresponda al idioma de destino (si se indico)
+        if idioma_destino and idioma_destino.strip():
+            codigo_destino = idioma_destino.strip().lower()
+            idioma_db = sesion.scalar(select(Idioma).where(Idioma.codigo == codigo_destino))
+            if not idioma_db:
+                raise ValueError(f"El idioma de destino '{codigo_destino}' no esta registrado.")
+            if variante.id_idioma != idioma_db.id_idioma:
+                raise ValueError(
+                    f"La variante regional '{variante.nombre}' no corresponde al idioma de destino "
+                    f"'{idioma_db.nombre}'."
+                )
 
     # 4. Buscar configuracion existente del usuario
     config = sesion.scalar(

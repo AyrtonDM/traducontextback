@@ -81,3 +81,9 @@ class Usuario(Base):
         back_populates="usuario",
         cascade="all, delete-orphan",
     )
+    conversaciones = relationship(
+        "Conversacion",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )

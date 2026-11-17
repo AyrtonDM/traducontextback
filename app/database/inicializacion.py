@@ -2,6 +2,7 @@ import app.models  # noqa: F401
 from app.database.base import Base
 from app.database.conexion import FabricaSesiones, motor
 from app.seeds.seed_contexto import sembrar_contextos
+from app.seeds.seed_entorno import sembrar_entornos
 from app.seeds.seed_rol import sembrar_roles
 from app.seeds.seed_idiomas import sembrar_idiomas
 from app.seeds.seed_tono import sembrar_tonos
@@ -25,4 +26,5 @@ def inicializar_base_datos() -> None:
         sembrar_idiomas(sesion)
         sembrar_tonos(sesion)
         sembrar_variantes_regionales(sesion)
+        sembrar_entornos(sesion)
         sesion.commit()

@@ -1,3 +1,9 @@
+from app.models.conversacion import (
+    Conversacion,
+    Entorno,
+    Intervencion,
+    ParticipanteConversacion,
+)
 from app.models.documento import (
     Documento,
     TraduccionDocumento,
@@ -41,4 +47,8 @@ __all__ = [
     "TraduccionDocumento",
     "Glosario",
     "TerminoGlosario",
+    "Conversacion",
+    "Entorno",
+    "Intervencion",
+    "ParticipanteConversacion",
 ]

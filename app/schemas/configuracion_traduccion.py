@@ -7,6 +7,12 @@ class GuardarConfiguracionTraduccionSolicitud(BaseModel):
     id_variante_regional: int | None = Field(default=None, description="ID de la variante regional opcional")
     explicar_expresiones: bool = Field(default=False, description="Indica si debe explicar expresiones")
     generar_alternativas: bool = Field(default=False, description="Indica si debe generar alternativas")
+    # No se almacena: solo sirve para validar que la variante corresponda al idioma de destino actual
+    idioma_destino: str | None = Field(
+        default=None,
+        max_length=10,
+        description="Codigo del idioma de destino actual (opcional) para validar la variante regional",
+    )
 
 
 class ConfiguracionTraduccionDetalle(BaseModel):

@@ -1,0 +1,353 @@
+import logging
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, selectinload
+
+from app.models.conversacion.conversacion import Conversacion
+from app.models.conversacion.intervencion import (
+    ESTADO_ERROR,
+    ESTADO_PROCESANDO,
+    ESTADO_TRADUCIDA,
+    Intervencion,
+)
+from app.schemas.intervencion import CrearIntervencionSolicitud, IntervencionDetalle
+from app.services.conversaciones import (
+    ConversacionNoEncontradaError,
+    ParticipanteNoEncontradoError,
+    exigir_conversacion_activa,
+    obtener_conversacion_usuario,
+)
+from app.services.traduccion_contextual import traducir_con_configuracion
+
+logger = logging.getLogger(__name__)
+
+# Espera maxima del modelo de lenguaje en conversaciones; al superarla se usa la traduccion de NLLB
+TIEMPO_MAXIMO_LLM_CONVERSACION_SEGUNDOS = 6.0
+# Una intervencion "procesando" sin cambios durante este tiempo se considera interrumpida y puede reintentarse
+TIEMPO_PROCESANDO_INTERRUMPIDA = timedelta(minutes=2)
+
+MENSAJE_ERROR_GENERICO = "No se pudo traducir la intervencion. Intenta de nuevo."
+
+
+class IntervencionNoEncontradaError(ConversacionNoEncontradaError):
+    """La intervencion no existe en una conversacion del usuario autenticado."""
+
+
+@dataclass
+class _ParametrosTraduccion:
+    """Datos necesarios para traducir, copiados antes de cerrar la transaccion."""
+
+    id_usuario: int
+    id_intervencion: int
+    texto: str
+    codigo_idioma_origen: str
+    codigo_idioma_destino: str
+    nombre_contexto: str | None
+    descripcion_contexto: str | None
+    nombre_tono: str | None
+    adaptar_estilo: bool
+    nombre_entorno: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Utilidades internas
+# ---------------------------------------------------------------------------
+
+
+def _ahora() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _consulta_intervenciones():
+    return select(Intervencion).options(
+        selectinload(Intervencion.participante),
+        selectinload(Intervencion.idioma_origen),
+        selectinload(Intervencion.idioma_destino),
+    )
+
+
+def _obtener_intervencion(sesion: Session, id_conversacion: int, id_intervencion: int) -> Intervencion:
+    intervencion = sesion.scalar(
+        _consulta_intervenciones().where(
+            Intervencion.id_intervencion == id_intervencion,
+            Intervencion.id_conversacion == id_conversacion,
+        )
+    )
+    if not intervencion:
+        raise IntervencionNoEncontradaError(
+            "Intervencion no encontrada en la conversacion indicada."
+        )
+    return intervencion
+
+
+def _bloquear_conversacion(sesion: Session, id_usuario: int, id_conversacion: int) -> None:
+    """Bloquea la fila de la conversacion hasta el commit (orden secuencial sin colisiones)."""
+    bloqueada = sesion.scalar(
+        select(Conversacion.id_conversacion)
+        .where(
+            Conversacion.id_conversacion == id_conversacion,
+            Conversacion.id_usuario == id_usuario,
+        )
+        .with_for_update()
+    )
+    if bloqueada is None:
+        raise ConversacionNoEncontradaError(
+            "Conversacion no encontrada o no pertenece al usuario autenticado."
+        )
+
+
+def _parametros_traduccion(
+    conversacion: Conversacion,
+    intervencion: Intervencion,
+    codigo_idioma_origen: str,
+    codigo_idioma_destino: str,
+) -> _ParametrosTraduccion:
+    """
+    Configuracion de la sesion para la traduccion central. El entorno (HU-24) y las descripciones se
+    envian como contexto; el modelo de lenguaje solo se usa si la sesion tiene tono, contexto o
+    descripcion personalizada.
+    """
+    contexto = conversacion.contexto
+    nombre_tono = conversacion.tono.nombre if conversacion.tono else None
+    descripciones = [
+        contexto.descripcion if contexto else None,
+        conversacion.descripcion_contexto,
+    ]
+    descripcion = "\n".join(d for d in descripciones if d) or None
+    adaptar_estilo = bool(nombre_tono or contexto or conversacion.descripcion_contexto)
+
+    return _ParametrosTraduccion(
+        id_usuario=conversacion.id_usuario,
+        id_intervencion=intervencion.id_intervencion,
+        texto=intervencion.texto_original,
+        codigo_idioma_origen=codigo_idioma_origen,
+        codigo_idioma_destino=codigo_idioma_destino,
+        nombre_contexto=contexto.nombre if contexto else None,
+        descripcion_contexto=descripcion,
+        nombre_tono=nombre_tono,
+        adaptar_estilo=adaptar_estilo,
+        nombre_entorno=conversacion.entorno.nombre if conversacion.entorno else None,
+    )
+
+
+def _traducir_y_guardar(sesion: Session, parametros: _ParametrosTraduccion) -> Intervencion:
+    """
+    Traduce fuera de cualquier transaccion (la intervencion ya esta guardada como 'procesando') y
+    guarda el resultado en una transaccion corta. Un error de traduccion deja la intervencion en
+    'error' sin interrumpir la sesion.
+    """
+    texto_traducido = None
+    mensaje_error = None
+    try:
+        traduccion = traducir_con_configuracion(
+            sesion=sesion,
+            id_usuario=parametros.id_usuario,
+            texto=parametros.texto,
+            idioma_origen=parametros.codigo_idioma_origen,
+            idioma_destino=parametros.codigo_idioma_destino,
+            nombre_contexto=parametros.nombre_contexto,
+            descripcion_contexto=parametros.descripcion_contexto,
+            nombre_tono=parametros.nombre_tono,
+            analizar_contexto=False,
+            adaptar_estilo=parametros.adaptar_estilo,
+            tiempo_maximo_llm=TIEMPO_MAXIMO_LLM_CONVERSACION_SEGUNDOS,
+            nombre_entorno=parametros.nombre_entorno,
+        )
+        texto_traducido = traduccion.traduccion
+        if parametros.adaptar_estilo and not traduccion.estilo_aplicado:
+            logger.info(
+                "Intervencion %s: no se aplico el estilo; se usa la traduccion base (NLLB).",
+                parametros.id_intervencion,
+            )
+    except ValueError as error:
+        mensaje_error = str(error)
+    except Exception:
+        logger.exception("Error al traducir la intervencion %s", parametros.id_intervencion)
+        mensaje_error = MENSAJE_ERROR_GENERICO
+
+    # populate_existing: se relee la fila por si la conversacion se elimino mientras se traducia
+    intervencion = sesion.get(Intervencion, parametros.id_intervencion, populate_existing=True)
+    if intervencion is None:
+        sesion.rollback()
+        raise IntervencionNoEncontradaError("La intervencion ya no existe.")
+
+    intervencion.estado = ESTADO_ERROR if mensaje_error else ESTADO_TRADUCIDA
+    intervencion.texto_traducido = texto_traducido
+    intervencion.mensaje_error = mensaje_error
+    intervencion.fecha_actualizacion = _ahora()
+    sesion.commit()
+    sesion.expire_all()
+    return _obtener_intervencion(sesion, intervencion.id_conversacion, intervencion.id_intervencion)
+
+
+def armar_detalle_intervencion(intervencion: Intervencion) -> IntervencionDetalle:
+    participante = intervencion.participante
+    return IntervencionDetalle(
+        id_intervencion=intervencion.id_intervencion,
+        id_conversacion=intervencion.id_conversacion,
+        id_participante=intervencion.id_participante,
+        nombre_participante=participante.nombre if participante else None,
+        orden_participante=participante.orden if participante else None,
+        orden=intervencion.orden,
+        texto_original=intervencion.texto_original,
+        texto_traducido=intervencion.texto_traducido,
+        id_idioma_origen=intervencion.id_idioma_origen,
+        id_idioma_destino=intervencion.id_idioma_destino,
+        codigo_idioma_origen=intervencion.idioma_origen.codigo if intervencion.idioma_origen else None,
+        codigo_idioma_destino=intervencion.idioma_destino.codigo if intervencion.idioma_destino else None,
+        nombre_idioma_origen=intervencion.idioma_origen.nombre if intervencion.idioma_origen else None,
+        nombre_idioma_destino=intervencion.idioma_destino.nombre if intervencion.idioma_destino else None,
+        estado=intervencion.estado,
+        mensaje_error=intervencion.mensaje_error,
+        fecha_creacion=intervencion.fecha_creacion,
+        fecha_actualizacion=intervencion.fecha_actualizacion,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Consultas
+# ---------------------------------------------------------------------------
+
+
+def listar_intervenciones(
+    sesion: Session,
+    id_usuario: int,
+    id_conversacion: int,
+    despues_de: int | None = None,
+) -> list[Intervencion]:
+    """
+    Intervenciones de una conversacion del usuario en orden ascendente (cualquier estado de la sesion).
+    Con `despues_de` (id de una intervencion de la misma conversacion) solo devuelve las posteriores.
+    """
+    obtener_conversacion_usuario(sesion, id_usuario, id_conversacion)
+
+    consulta = _consulta_intervenciones().where(Intervencion.id_conversacion == id_conversacion)
+    if despues_de is not None:
+        orden_referencia = sesion.scalar(
+            select(Intervencion.orden).where(
+                Intervencion.id_intervencion == despues_de,
+                Intervencion.id_conversacion == id_conversacion,
+            )
+        )
+        if orden_referencia is None:
+            raise IntervencionNoEncontradaError(
+                "La intervencion indicada en 'despues_de' no pertenece a la conversacion."
+            )
+        consulta = consulta.where(Intervencion.orden > orden_referencia)
+
+    return list(sesion.scalars(consulta.order_by(Intervencion.orden.asc())).all())
+
+
+# ---------------------------------------------------------------------------
+# Crear y reintentar
+# ---------------------------------------------------------------------------
+
+
+def crear_intervencion(
+    sesion: Session,
+    id_usuario: int,
+    id_conversacion: int,
+    datos: CrearIntervencionSolicitud,
+) -> Intervencion:
+    """
+    Registra la intervencion del participante que habla y la traduce al idioma del otro participante.
+    Origen = idioma del participante que habla; destino = idioma del otro participante.
+    """
+    # 1. Transaccion corta: validar, bloquear la conversacion, asignar orden y guardar "procesando"
+    _bloquear_conversacion(sesion, id_usuario, id_conversacion)
+    conversacion = exigir_conversacion_activa(sesion, id_usuario, id_conversacion)
+
+    hablante = next(
+        (p for p in conversacion.participantes if p.id_participante == datos.id_participante),
+        None,
+    )
+    if not hablante:
+        raise ParticipanteNoEncontradoError(
+            "Participante no encontrado en la conversacion indicada."
+        )
+    oyente = next(
+        (p for p in conversacion.participantes if p.id_participante != hablante.id_participante),
+        None,
+    )
+    if not oyente:
+        raise ValueError("La conversacion no tiene otro participante al que traducir.")
+
+    ultimo_orden = sesion.scalar(
+        select(func.max(Intervencion.orden)).where(Intervencion.id_conversacion == id_conversacion)
+    )
+    intervencion = Intervencion(
+        id_conversacion=id_conversacion,
+        id_participante=hablante.id_participante,
+        orden=(ultimo_orden or 0) + 1,
+        texto_original=datos.texto,
+        id_idioma_origen=hablante.id_idioma,
+        id_idioma_destino=oyente.id_idioma,
+        estado=ESTADO_PROCESANDO,
+    )
+    sesion.add(intervencion)
+    sesion.flush()
+
+    parametros = _parametros_traduccion(
+        conversacion,
+        intervencion,
+        codigo_idioma_origen=hablante.idioma.codigo,
+        codigo_idioma_destino=oyente.idioma.codigo,
+    )
+    # El commit libera el bloqueo antes de traducir
+    sesion.commit()
+
+    # 2. Traduccion sin transaccion abierta y 3. guardado del resultado
+    return _traducir_y_guardar(sesion, parametros)
+
+
+def reintentar_intervencion(
+    sesion: Session,
+    id_usuario: int,
+    id_conversacion: int,
+    id_intervencion: int,
+) -> Intervencion:
+    """
+    Vuelve a traducir una intervencion en 'error', o en 'procesando' si quedo interrumpida.
+    Usa la configuracion actual de la sesion, que debe estar activa.
+    """
+    conversacion = exigir_conversacion_activa(sesion, id_usuario, id_conversacion)
+
+    intervencion = sesion.scalar(
+        select(Intervencion)
+        .where(
+            Intervencion.id_intervencion == id_intervencion,
+            Intervencion.id_conversacion == id_conversacion,
+        )
+        .with_for_update()
+    )
+    if not intervencion:
+        raise IntervencionNoEncontradaError(
+            "Intervencion no encontrada en la conversacion indicada."
+        )
+
+    ultima_modificacion = intervencion.fecha_actualizacion or intervencion.fecha_creacion
+    interrumpida = (
+        intervencion.estado == ESTADO_PROCESANDO
+        and ultima_modificacion < _ahora() - TIEMPO_PROCESANDO_INTERRUMPIDA
+    )
+    if intervencion.estado != ESTADO_ERROR and not interrumpida:
+        raise ValueError(
+            f"Solo se puede reintentar una intervencion con error. Estado actual: {intervencion.estado}."
+        )
+
+    intervencion.estado = ESTADO_PROCESANDO
+    intervencion.texto_traducido = None
+    intervencion.mensaje_error = None
+    intervencion.fecha_actualizacion = _ahora()
+
+    parametros = _parametros_traduccion(
+        conversacion,
+        intervencion,
+        codigo_idioma_origen=intervencion.idioma_origen.codigo,
+        codigo_idioma_destino=intervencion.idioma_destino.codigo,
+    )
+    sesion.commit()
+
+    return _traducir_y_guardar(sesion, parametros)

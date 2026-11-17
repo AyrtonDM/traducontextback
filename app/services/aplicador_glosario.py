@@ -132,6 +132,24 @@ def traducir_con_glosario(
     return traduccion, list(aplicados.values())
 
 
+def respeta_terminos_glosario(
+    texto_adaptado: str,
+    texto_base: str,
+    terminos_aplicados: list[TerminoAplicado],
+) -> bool:
+    """
+    Verifica que un texto reescrito (p. ej. adaptado a una variante regional) conserve tal cual
+    los terminos del glosario que ya aparecian en la traduccion base.
+    """
+    base = texto_base.lower()
+    adaptado = texto_adaptado.lower()
+    for termino in terminos_aplicados:
+        esperado = termino.resultado.lower()
+        if esperado and esperado in base and esperado not in adaptado:
+            return False
+    return True
+
+
 def describir_reglas(reglas: list[ReglaGlosario]) -> list[str]:
     """Descripcion legible de las reglas (para indicarlas a modelos de lenguaje)."""
     descripciones = []

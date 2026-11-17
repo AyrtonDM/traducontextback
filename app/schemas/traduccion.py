@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -55,6 +56,8 @@ class ExplicacionExpresion(BaseModel):
 
 
 class ResultadoEnriquecimiento(BaseModel):
+    # Traduccion adaptada a la variante regional (null si no se solicito la adaptacion)
+    traduccion_adaptada: str | None = None
     alternativas: list[AlternativaTraduccion] = Field(default_factory=list)
     explicacion_expresiones: list[ExplicacionExpresion] = Field(default_factory=list)
 
@@ -72,7 +75,12 @@ class TraduccionResultado(BaseModel):
     nombre_tono: str | None = None
     id_variante_regional: int | None = None
     nombre_variante_regional: str | None = None
+    # Localizacion cultural (HU-17)
+    region_aplicada: bool = False
+    estado_region: Literal["sin_region", "aplicada", "incompatible", "error_adaptacion"] = "sin_region"
     explicar_expresiones: bool = False
+    # True solo si las explicaciones estaban activadas y el modelo respondio correctamente (HU-16)
+    explicaciones_procesadas: bool = False
     generar_alternativas: bool = False
     alternativas: list[AlternativaTraduccion] = Field(default_factory=list)
     explicacion_expresiones: list[ExplicacionExpresion] = Field(default_factory=list)
