@@ -10,7 +10,13 @@ LONGITUD_MAXIMA_TEXTO_INTERVENCION = 2000
 
 
 class CrearIntervencionSolicitud(BaseModel):
-    id_participante: int = Field(..., description="Participante que habla (de esta conversacion)")
+    id_participante: int | None = Field(
+        default=None,
+        description=(
+            "Participante que habla (de esta conversacion). Si se omite o es null, la intervencion "
+            "queda como 'No identificado' y su idioma se detecta automaticamente."
+        ),
+    )
     texto: str = Field(
         ...,
         max_length=LONGITUD_MAXIMA_TEXTO_INTERVENCION,

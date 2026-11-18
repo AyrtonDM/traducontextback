@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.conversacion.conversacion import Conversacion
+from app.models.traduccion.idioma import Idioma
 from app.models.conversacion.intervencion import (
     ESTADO_ERROR,
     ESTADO_PROCESANDO,
@@ -19,6 +20,7 @@ from app.services.conversaciones import (
     exigir_conversacion_activa,
     obtener_conversacion_usuario,
 )
+from app.services.traduccion import detector_idioma
 from app.services.traduccion_contextual import traducir_con_configuracion
 
 logger = logging.getLogger(__name__)
@@ -29,6 +31,12 @@ TIEMPO_MAXIMO_LLM_CONVERSACION_SEGUNDOS = 6.0
 TIEMPO_PROCESANDO_INTERRUMPIDA = timedelta(minutes=2)
 
 MENSAJE_ERROR_GENERICO = "No se pudo traducir la intervencion. Intenta de nuevo."
+
+# HU-31/HU-26: una intervencion sin hablante solo se acepta si su idioma se detecta con esta confianza
+UMBRAL_CONFIANZA_DETECCION = 0.7
+MENSAJE_IDIOMA_NO_IDENTIFICADO = (
+    "No se pudo identificar el idioma de la intervencion; selecciona quien habla."
+)
 
 
 class IntervencionNoEncontradaError(ConversacionNoEncontradaError):
@@ -130,6 +138,36 @@ def _parametros_traduccion(
         adaptar_estilo=adaptar_estilo,
         nombre_entorno=conversacion.entorno.nombre if conversacion.entorno else None,
     )
+
+
+def _idiomas_por_deteccion(conversacion: Conversacion, texto: str) -> tuple[Idioma, Idioma]:
+    """
+    Intervencion sin hablante (HU-31): detecta el idioma y lo exige igual a uno de los dos de la
+    sesion con confianza suficiente. Devuelve (origen, destino); el destino es el otro idioma.
+    """
+    try:
+        deteccion = detector_idioma.detectar(texto)
+    except Exception:
+        logger.exception("No se pudo detectar el idioma de una intervencion sin hablante")
+        raise ValueError(MENSAJE_IDIOMA_NO_IDENTIFICADO)
+
+    codigo = deteccion["codigo"]
+    confianza = deteccion["confianza"]
+    logger.info(
+        "Conversacion %s: idioma detectado '%s' con confianza %.2f",
+        conversacion.id_conversacion,
+        codigo,
+        confianza,
+    )
+    if confianza < UMBRAL_CONFIANZA_DETECCION:
+        raise ValueError(MENSAJE_IDIOMA_NO_IDENTIFICADO)
+
+    idioma_1, idioma_2 = conversacion.idioma_origen, conversacion.idioma_destino
+    if idioma_1 and codigo == idioma_1.codigo:
+        return idioma_1, idioma_2
+    if idioma_2 and codigo == idioma_2.codigo:
+        return idioma_2, idioma_1
+    raise ValueError(MENSAJE_IDIOMA_NO_IDENTIFICADO)
 
 
 def _traducir_y_guardar(sesion: Session, parametros: _ParametrosTraduccion) -> Intervencion:
@@ -259,31 +297,39 @@ def crear_intervencion(
     _bloquear_conversacion(sesion, id_usuario, id_conversacion)
     conversacion = exigir_conversacion_activa(sesion, id_usuario, id_conversacion)
 
-    hablante = next(
-        (p for p in conversacion.participantes if p.id_participante == datos.id_participante),
-        None,
-    )
-    if not hablante:
-        raise ParticipanteNoEncontradoError(
-            "Participante no encontrado en la conversacion indicada."
+    if datos.id_participante is not None:
+        # Hablante elegido: se usa su idioma y no se detecta
+        hablante = next(
+            (p for p in conversacion.participantes if p.id_participante == datos.id_participante),
+            None,
         )
-    oyente = next(
-        (p for p in conversacion.participantes if p.id_participante != hablante.id_participante),
-        None,
-    )
-    if not oyente:
-        raise ValueError("La conversacion no tiene otro participante al que traducir.")
+        if not hablante:
+            raise ParticipanteNoEncontradoError(
+                "Participante no encontrado en la conversacion indicada."
+            )
+        oyente = next(
+            (p for p in conversacion.participantes if p.id_participante != hablante.id_participante),
+            None,
+        )
+        if not oyente:
+            raise ValueError("La conversacion no tiene otro participante al que traducir.")
+        id_participante = hablante.id_participante
+        idioma_origen, idioma_destino = hablante.idioma, oyente.idioma
+    else:
+        # "No identificado": el sentido de la traduccion sale del idioma detectado
+        id_participante = None
+        idioma_origen, idioma_destino = _idiomas_por_deteccion(conversacion, datos.texto)
 
     ultimo_orden = sesion.scalar(
         select(func.max(Intervencion.orden)).where(Intervencion.id_conversacion == id_conversacion)
     )
     intervencion = Intervencion(
         id_conversacion=id_conversacion,
-        id_participante=hablante.id_participante,
+        id_participante=id_participante,
         orden=(ultimo_orden or 0) + 1,
         texto_original=datos.texto,
-        id_idioma_origen=hablante.id_idioma,
-        id_idioma_destino=oyente.id_idioma,
+        id_idioma_origen=idioma_origen.id_idioma,
+        id_idioma_destino=idioma_destino.id_idioma,
         estado=ESTADO_PROCESANDO,
     )
     sesion.add(intervencion)
@@ -292,8 +338,8 @@ def crear_intervencion(
     parametros = _parametros_traduccion(
         conversacion,
         intervencion,
-        codigo_idioma_origen=hablante.idioma.codigo,
-        codigo_idioma_destino=oyente.idioma.codigo,
+        codigo_idioma_origen=idioma_origen.codigo,
+        codigo_idioma_destino=idioma_destino.codigo,
     )
     # El commit libera el bloqueo antes de traducir
     sesion.commit()

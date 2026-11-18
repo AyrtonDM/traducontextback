@@ -62,12 +62,19 @@ def _mensaje_resultado(estado: str) -> str:
     description=(
         "Registra la intervencion del participante indicado y la traduce del idioma de ese "
         "participante al idioma del otro participante, con el tono, contexto y entorno de la sesion. "
-        "Si la traduccion falla, la intervencion queda en estado 'error' (201) y puede reintentarse."
+        "Si la traduccion falla, la intervencion queda en estado 'error' (201) y puede reintentarse. "
+        "Sin 'id_participante' la intervencion queda como 'No identificado': se detecta su idioma, "
+        "que debe ser uno de los dos de la sesion con confianza suficiente."
     ),
     responses={
         **RESPUESTAS_COMUNES,
         **RESPUESTA_404,
-        status.HTTP_400_BAD_REQUEST: {"description": "La conversacion esta pausada o finalizada."},
+        status.HTTP_400_BAD_REQUEST: {
+            "description": (
+                "La conversacion esta pausada o finalizada, o no se pudo identificar el idioma "
+                "de una intervencion sin participante."
+            )
+        },
     },
 )
 def registrar_intervencion(
