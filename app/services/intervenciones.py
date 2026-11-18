@@ -20,6 +20,7 @@ from app.services.conversaciones import (
     exigir_conversacion_activa,
     obtener_conversacion_usuario,
 )
+from app.services.enriquecedor_traduccion import neutralizar_delimitadores
 from app.services.traduccion import detector_idioma
 from app.services.traduccion_contextual import traducir_con_configuracion
 
@@ -37,6 +38,13 @@ UMBRAL_CONFIANZA_DETECCION = 0.7
 MENSAJE_IDIOMA_NO_IDENTIFICADO = (
     "No se pudo identificar el idioma de la intervencion; selecciona quien habla."
 )
+
+# HU-29: historial de la conversacion que se envia como contexto al modelo de lenguaje
+MAX_INTERVENCIONES_HISTORIAL = 5
+# Tope por linea (una sola intervencion larga no puede ocupar todo el historial) y tope total
+MAX_CARACTERES_LINEA_HISTORIAL = 500
+MAX_CARACTERES_HISTORIAL = 1500
+NOMBRE_NO_IDENTIFICADO = "No identificado"
 
 
 class IntervencionNoEncontradaError(ConversacionNoEncontradaError):
@@ -57,6 +65,8 @@ class _ParametrosTraduccion:
     nombre_tono: str | None
     adaptar_estilo: bool
     nombre_entorno: str | None = None
+    # HU-29: None si 'mantener_contexto' esta apagado; lista vacia si no hay intervenciones previas
+    historial_conversacion: list[str] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -106,16 +116,77 @@ def _bloquear_conversacion(sesion: Session, id_usuario: int, id_conversacion: in
         )
 
 
+def _linea_historial(intervencion: Intervencion) -> str:
+    """'<nombre> (<idioma>): <texto original>' en una sola linea, sin delimitadores y truncada."""
+    nombre = intervencion.participante.nombre if intervencion.participante else NOMBRE_NO_IDENTIFICADO
+    idioma = intervencion.idioma_origen.nombre if intervencion.idioma_origen else "?"
+    linea = " ".join(f"{nombre} ({idioma}): {intervencion.texto_original}".split())
+    linea = neutralizar_delimitadores(linea)
+    if len(linea) > MAX_CARACTERES_LINEA_HISTORIAL:
+        linea = linea[: MAX_CARACTERES_LINEA_HISTORIAL - 3].rstrip() + "..."
+    return linea
+
+
+def _leer_historial(
+    sesion: Session,
+    conversacion: Conversacion,
+    orden_actual: int,
+) -> list[str] | None:
+    """
+    HU-29: ultimas intervenciones 'traducidas' de ESTA conversacion anteriores a `orden_actual`, en
+    orden ascendente. Recorta las mas antiguas hasta quedar dentro del tope total de caracteres.
+    Devuelve None si 'mantener_contexto' esta apagado (no se consulta la base de datos).
+    """
+    if not conversacion.mantener_contexto:
+        return None
+
+    previas = sesion.scalars(
+        _consulta_intervenciones()
+        .where(
+            Intervencion.id_conversacion == conversacion.id_conversacion,
+            Intervencion.estado == ESTADO_TRADUCIDA,
+            Intervencion.orden < orden_actual,
+        )
+        .order_by(Intervencion.orden.desc())
+        .limit(MAX_INTERVENCIONES_HISTORIAL)
+    ).all()
+    lineas = [_linea_historial(intervencion) for intervencion in reversed(previas)]
+
+    # Las lineas se unen con salto de linea en el prompt: se cuenta un caracter por separador
+    while lineas and _caracteres_historial(lineas) > MAX_CARACTERES_HISTORIAL:
+        lineas.pop(0)
+    return lineas
+
+
+def _caracteres_historial(lineas: list[str]) -> int:
+    return sum(len(linea) for linea in lineas) + max(len(lineas) - 1, 0)
+
+
+def _registrar_uso_historial(id_intervencion: int, historial: list[str] | None) -> None:
+    if historial is None:
+        logger.info("Intervencion %s: historial omitido (interruptor apagado)", id_intervencion)
+    elif not historial:
+        logger.info("Intervencion %s: historial omitido (sin previas)", id_intervencion)
+    else:
+        logger.info(
+            "Intervencion %s: historial usado (%d, %d caracteres)",
+            id_intervencion,
+            len(historial),
+            _caracteres_historial(historial),
+        )
+
+
 def _parametros_traduccion(
     conversacion: Conversacion,
     intervencion: Intervencion,
     codigo_idioma_origen: str,
     codigo_idioma_destino: str,
+    historial: list[str] | None = None,
 ) -> _ParametrosTraduccion:
     """
-    Configuracion de la sesion para la traduccion central. El entorno (HU-24) y las descripciones se
-    envian como contexto; el modelo de lenguaje solo se usa si la sesion tiene tono, contexto o
-    descripcion personalizada.
+    Configuracion de la sesion para la traduccion central. El entorno (HU-24), las descripciones y el
+    historial (HU-29) se envian como contexto; el modelo de lenguaje solo se usa si la sesion tiene
+    tono, contexto, descripcion personalizada o historial (NLLB no puede usar contexto).
     """
     contexto = conversacion.contexto
     nombre_tono = conversacion.tono.nombre if conversacion.tono else None
@@ -124,7 +195,9 @@ def _parametros_traduccion(
         conversacion.descripcion_contexto,
     ]
     descripcion = "\n".join(d for d in descripciones if d) or None
-    adaptar_estilo = bool(nombre_tono or contexto or conversacion.descripcion_contexto)
+    adaptar_estilo = bool(
+        nombre_tono or contexto or conversacion.descripcion_contexto or historial
+    )
 
     return _ParametrosTraduccion(
         id_usuario=conversacion.id_usuario,
@@ -137,6 +210,7 @@ def _parametros_traduccion(
         nombre_tono=nombre_tono,
         adaptar_estilo=adaptar_estilo,
         nombre_entorno=conversacion.entorno.nombre if conversacion.entorno else None,
+        historial_conversacion=historial,
     )
 
 
@@ -192,6 +266,7 @@ def _traducir_y_guardar(sesion: Session, parametros: _ParametrosTraduccion) -> I
             adaptar_estilo=parametros.adaptar_estilo,
             tiempo_maximo_llm=TIEMPO_MAXIMO_LLM_CONVERSACION_SEGUNDOS,
             nombre_entorno=parametros.nombre_entorno,
+            historial_conversacion=parametros.historial_conversacion,
         )
         texto_traducido = traduccion.traduccion
         if parametros.adaptar_estilo and not traduccion.estilo_aplicado:
@@ -335,11 +410,15 @@ def crear_intervencion(
     sesion.add(intervencion)
     sesion.flush()
 
+    # HU-29: el historial se lee dentro de esta transaccion corta, antes del commit
+    historial = _leer_historial(sesion, conversacion, intervencion.orden)
+    _registrar_uso_historial(intervencion.id_intervencion, historial)
     parametros = _parametros_traduccion(
         conversacion,
         intervencion,
         codigo_idioma_origen=idioma_origen.codigo,
         codigo_idioma_destino=idioma_destino.codigo,
+        historial=historial,
     )
     # El commit libera el bloqueo antes de traducir
     sesion.commit()
@@ -388,11 +467,15 @@ def reintentar_intervencion(
     intervencion.mensaje_error = None
     intervencion.fecha_actualizacion = _ahora()
 
+    # HU-29: solo intervenciones anteriores a la que se reintenta, leidas antes del commit
+    historial = _leer_historial(sesion, conversacion, intervencion.orden)
+    _registrar_uso_historial(intervencion.id_intervencion, historial)
     parametros = _parametros_traduccion(
         conversacion,
         intervencion,
         codigo_idioma_origen=intervencion.idioma_origen.codigo,
         codigo_idioma_destino=intervencion.idioma_destino.codigo,
+        historial=historial,
     )
     sesion.commit()
 

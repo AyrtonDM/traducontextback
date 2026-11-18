@@ -71,6 +71,7 @@ def traducir_con_configuracion(
     adaptar_estilo: bool = False,
     tiempo_maximo_llm: float | None = None,
     nombre_entorno: str | None = None,
+    historial_conversacion: list[str] | None = None,
 ) -> TraduccionContextual:
     """
     Funcion central de traduccion contextual (HU-15 a HU-18 y glosarios), reutilizable por
@@ -81,7 +82,8 @@ def traducir_con_configuracion(
     3. La variante regional solo se aplica si corresponde al idioma de destino.
     4. Enriquecimiento con el modelo de lenguaje (region, alternativas, modismos y, si se pide
        `adaptar_estilo`, tono y contexto); si falla, expira (`tiempo_maximo_llm`) o no respeta el
-       glosario, se conserva la traduccion base.
+       glosario, se conserva la traduccion base. `historial_conversacion` (HU-29, solo conversaciones)
+       llega al modelo como contexto delimitado; /traducciones no lo envia.
 
     Las consultas a la base de datos se hacen solo cuando hacen falta (glosario, o idioma de destino
     si hay variante) y el resto al final, para no dejar una transaccion abierta mientras se traduce.
@@ -160,6 +162,7 @@ def traducir_con_configuracion(
         adaptar_estilo=adaptar_estilo,
         tiempo_maximo=tiempo_maximo_llm,
         nombre_entorno=nombre_entorno,
+        historial_conversacion=historial_conversacion,
     )
 
     traduccion_final = resultado["traduccion"]
