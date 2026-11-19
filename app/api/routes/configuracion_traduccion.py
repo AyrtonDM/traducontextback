@@ -12,6 +12,7 @@ from app.services.configuracion_traduccion import (
     armar_detalle_configuracion,
     guardar_o_actualizar_configuracion,
     obtener_configuracion_usuario,
+    restablecer_configuracion,
 )
 
 
@@ -49,6 +50,7 @@ def guardar_configuracion(
             explicar_expresiones=datos.explicar_expresiones,
             generar_alternativas=datos.generar_alternativas,
             idioma_destino=datos.idioma_destino,
+            id_glosario=datos.id_glosario,
         )
     except ValueError as error:
         raise HTTPException(
@@ -91,3 +93,32 @@ def obtener_configuracion(
         resultado=detalle,
     )
 
+
+@enrutador.delete(
+    "",
+    response_model=RespuestaConfiguracionTraduccion,
+    status_code=status.HTTP_200_OK,
+    summary="Restablecer preferencias de traduccion (requiere token)",
+    description=(
+        "Restablece las preferencias de traduccion del usuario autenticado a los valores por "
+        "defecto: primer contexto general y primer tono activos, sin idioma de destino, "
+        "variante regional ni glosario predeterminados, y sin alternativas ni explicaciones (HU-33)."
+    ),
+)
+def restablecer_preferencias(
+    usuario: Usuario = Depends(requiere_token),
+    sesion: Session = Depends(obtener_sesion),
+) -> RespuestaConfiguracionTraduccion:
+    try:
+        config = restablecer_configuracion(sesion=sesion, id_usuario=usuario.id)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    detalle = armar_detalle_configuracion(config=config, sesion=sesion)
+    return RespuestaConfiguracionTraduccion(
+        mensaje="Preferencias restablecidas a los valores por defecto.",
+        resultado=detalle,
+    )

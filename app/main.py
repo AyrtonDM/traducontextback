@@ -26,6 +26,8 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    # Permite al front leer el nombre de los archivos descargados (exportacion de reportes, HU-48)
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(enrutador, prefix=configuracion.api_v1_prefix)

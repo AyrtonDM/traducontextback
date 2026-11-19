@@ -16,6 +16,41 @@ class SolicitudTraduccion(BaseModel):
         default=None,
         description="Glosario a aplicar (debe ser del mismo par de idiomas)",
     )
+    guardar_en_historial: bool = Field(
+        default=True,
+        description=(
+            "Si es false, la traduccion no se guarda en el historial (por ejemplo, la traduccion "
+            "automatica mientras se escribe). Se puede registrar al terminar con POST /traducciones/historial."
+        ),
+    )
+    # Valores puntuales (HU-33): si se envian, se usan solo en esta traduccion y no
+    # modifican la configuracion guardada. Si se omiten, se usa la configuracion guardada.
+    # Enviar null en id_tono o id_variante_regional significa "sin tono" / "sin variante".
+    id_contexto: int | None = Field(default=None, description="Contexto para esta traduccion")
+    id_tono: int | None = Field(default=None, description="Tono para esta traduccion")
+    id_variante_regional: int | None = Field(
+        default=None,
+        description="Variante regional para esta traduccion",
+    )
+    explicar_expresiones: bool | None = Field(
+        default=None,
+        description="Explicar expresiones en esta traduccion",
+    )
+    generar_alternativas: bool | None = Field(
+        default=None,
+        description="Generar alternativas en esta traduccion",
+    )
+
+    def valores_sobrescritos(self) -> dict:
+        """Campos de configuracion enviados explicitamente en la solicitud."""
+        campos = {
+            "id_contexto",
+            "id_tono",
+            "id_variante_regional",
+            "explicar_expresiones",
+            "generar_alternativas",
+        }
+        return {campo: getattr(self, campo) for campo in campos & self.model_fields_set}
 
     @model_validator(mode="before")
     @classmethod
@@ -62,7 +97,20 @@ class ResultadoEnriquecimiento(BaseModel):
     explicacion_expresiones: list[ExplicacionExpresion] = Field(default_factory=list)
 
 
+class SugerenciaTraduccion(BaseModel):
+    """Traduccion anterior similar del historial del usuario (HU-44)."""
+
+    id_traduccion: int
+    texto_original: str
+    texto_traducido: str
+    fecha_creacion: datetime
+    # 0 a 1: parecido entre el texto nuevo y el texto original de la sugerencia
+    similitud: float
+
+
 class TraduccionResultado(BaseModel):
+    # Registro del historial creado por esta traduccion (null si no se guardo)
+    id_traduccion: int | None = None
     texto_origen: str
     idioma_origen: str
     idioma_destino: str
@@ -88,6 +136,8 @@ class TraduccionResultado(BaseModel):
     id_glosario: int | None = None
     nombre_glosario: str | None = None
     terminos_glosario_aplicados: list[TerminoAplicado] = Field(default_factory=list)
+    # Reutilizacion de traducciones (HU-44): maximo 3, de mayor a menor similitud
+    sugerencias: list[SugerenciaTraduccion] = Field(default_factory=list)
 
 
 class RespuestaTraduccion(BaseModel):
@@ -114,6 +164,39 @@ class TraduccionHistorialDetalle(BaseModel):
 class RespuestaHistorial(BaseModel):
     mensaje: str
     resultado: list[TraduccionHistorialDetalle]
+
+
+class SolicitudRegistrarTraduccion(BaseModel):
+    """Registra en el historial una traduccion ya realizada (sin volver a traducir)."""
+
+    texto_original: str = Field(..., min_length=1, max_length=5000)
+    # Puede diferir de la traduccion generada si el usuario eligio una alternativa o sugerencia
+    texto_traducido: str = Field(..., min_length=1, max_length=20000)
+    idioma_origen: str = Field(..., min_length=2, max_length=10)
+    idioma_destino: str = Field(..., min_length=2, max_length=10)
+    id_glosario: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalizar(cls, data):
+        if isinstance(data, dict):
+            for campo in ("texto_original", "texto_traducido"):
+                if isinstance(data.get(campo), str):
+                    data[campo] = data[campo].strip()
+            for campo in ("idioma_origen", "idioma_destino"):
+                if isinstance(data.get(campo), str):
+                    data[campo] = data[campo].strip().lower()
+        return data
+
+
+class TraduccionRegistrada(BaseModel):
+    id_traduccion: int
+    fecha_creacion: datetime
+
+
+class RespuestaRegistrarTraduccion(BaseModel):
+    mensaje: str
+    resultado: TraduccionRegistrada
 
 
 class SolicitudFavorito(BaseModel):

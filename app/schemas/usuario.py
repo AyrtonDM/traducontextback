@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -135,6 +136,60 @@ class UsuarioDetalleRespuesta(BaseModel):
     resultado: UsuarioPerfilDetalle
 
 
+
+
+# ---------------------------------------------------------------------------
+# Administracion de usuarios (HU-05)
+# ---------------------------------------------------------------------------
+
+
+class UsuarioAdminResumen(BaseModel):
+    """Fila del listado de administracion."""
+
+    model_config = {"from_attributes": True}
+    id: int
+    nombre: str
+    correo: str
+    estado: str
+    fecha_creacion: datetime
+    rol: RolDetalle
+
+
+class UsuarioAdminDetalle(UsuarioAdminResumen):
+    """Detalle de una cuenta para el administrador."""
+
+    fecha_actualizacion: datetime | None = None
+    foto_perfil: str | None = None
+    ultimo_acceso: datetime | None = None
+    sesiones_activas: int = 0
+    total_traducciones: int = 0
+    total_documentos: int = 0
+    total_conversaciones: int = 0
+    total_glosarios: int = 0
+
+
+class ListaUsuariosPaginada(BaseModel):
+    elementos: list[UsuarioAdminResumen]
+    total: int
+    pagina: int
+    tamano_pagina: int
+    total_paginas: int
+
+
 class ListaUsuariosRespuesta(BaseModel):
     mensaje: str
-    resultado: list[UsuarioDetalle]
+    resultado: ListaUsuariosPaginada
+
+
+class UsuarioAdminRespuesta(BaseModel):
+    mensaje: str
+    resultado: UsuarioAdminDetalle
+
+
+class CambiarRolUsuarioSolicitud(BaseModel):
+    id_rol: int = Field(..., gt=0, description="ID del nuevo rol")
+
+
+class ListaRolesRespuesta(BaseModel):
+    mensaje: str
+    resultado: list[RolDetalle]

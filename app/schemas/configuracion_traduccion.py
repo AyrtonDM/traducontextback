@@ -7,11 +7,18 @@ class GuardarConfiguracionTraduccionSolicitud(BaseModel):
     id_variante_regional: int | None = Field(default=None, description="ID de la variante regional opcional")
     explicar_expresiones: bool = Field(default=False, description="Indica si debe explicar expresiones")
     generar_alternativas: bool = Field(default=False, description="Indica si debe generar alternativas")
-    # No se almacena: solo sirve para validar que la variante corresponda al idioma de destino actual
+    # Preferencias (HU-33): se guardan como valores predeterminados del usuario
     idioma_destino: str | None = Field(
         default=None,
         max_length=10,
-        description="Codigo del idioma de destino actual (opcional) para validar la variante regional",
+        description=(
+            "Codigo del idioma de destino preferido (opcional). Se guarda y se usa para "
+            "validar que la variante regional y el glosario sean compatibles"
+        ),
+    )
+    id_glosario: int | None = Field(
+        default=None,
+        description="Glosario predeterminado (opcional, debe ser del usuario y del idioma de destino)",
     )
 
 
@@ -26,9 +33,15 @@ class ConfiguracionTraduccionDetalle(BaseModel):
     explicar_expresiones: bool = False
     generar_alternativas: bool = False
 
+    id_idioma_destino: int | None = None
+    id_glosario: int | None = None
+
     nombre_contexto: str | None = None
     nombre_tono: str | None = None
     nombre_variante_regional: str | None = None
+    codigo_idioma_destino: str | None = None
+    nombre_idioma_destino: str | None = None
+    nombre_glosario: str | None = None
 
     @computed_field
     @property

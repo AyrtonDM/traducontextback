@@ -12,6 +12,7 @@ PERMISOS_ADMIN = [
     "gestionar_usuarios",
     "administrar_planes",
     "ver_dashboard",
+    "generar_reportes",
 ]
 
 

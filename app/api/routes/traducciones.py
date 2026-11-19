@@ -7,10 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.seguridad import requiere_token
 from app.database.conexion import obtener_sesion
 from app.models.traduccion.configuracion_traduccion import ConfiguracionTraduccion
-from app.models.traduccion.contexto import Contexto
-from app.models.traduccion.tono import Tono
 from app.models.traduccion.traduccion import Traduccion
-from app.models.traduccion.variante_regional import VarianteRegional
 from app.models.usuario.usuario import Usuario
 from app.schemas.configuracion_traduccion import (
     GuardarConfiguracionTraduccionSolicitud,
@@ -28,9 +25,12 @@ from app.schemas.traduccion import (
     RespuestaEliminarTraduccion,
     RespuestaFavorito,
     RespuestaHistorial,
+    RespuestaRegistrarTraduccion,
     RespuestaTraduccion,
     SolicitudFavorito,
+    SolicitudRegistrarTraduccion,
     SolicitudTraduccion,
+    TraduccionRegistrada,
     TraduccionResultado,
 )
 from app.schemas.variante_regional import ListaVariantesRegionalesRespuesta
@@ -38,10 +38,13 @@ from app.services.configuracion_traduccion import (
     armar_detalle_configuracion,
     guardar_o_actualizar_configuracion,
     obtener_configuracion_usuario,
+    resolver_configuracion_efectiva,
 )
 from app.services.contextos import guardar_nuevo_contexto, obtener_todos_contextos
 from app.services.glosarios import GlosarioNoEncontradoError
 from app.services.historial_traducciones import (
+    buscar_traducciones_similares,
+    registrar_traduccion,
     definir_favorito,
     eliminar_traduccion,
     listar_historial,
@@ -214,6 +217,7 @@ def guardar_configuracion_traduccion(
             explicar_expresiones=datos.explicar_expresiones,
             generar_alternativas=datos.generar_alternativas,
             idioma_destino=datos.idioma_destino,
+            id_glosario=datos.id_glosario,
         )
     except ValueError as error:
         raise HTTPException(
@@ -299,25 +303,26 @@ def traducir(
             ),
         )
 
-    # 2. Obtener datos del contexto, tono y variante de la configuracion
-    contexto_db = sesion.scalar(
-        select(Contexto).where(
-            Contexto.id_contexto == config.id_contexto,
-            Contexto.activo.is_(True),
+    # 2. Configuracion efectiva: la guardada, con los valores puntuales de la solicitud (HU-33).
+    #    Los valores puntuales no modifican la configuracion guardada.
+    try:
+        efectiva = resolver_configuracion_efectiva(
+            sesion=sesion,
+            id_usuario=usuario.id,
+            config=config,
+            sobrescritos=solicitud.valores_sobrescritos(),
         )
-    )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    contexto_db = efectiva.contexto
+    tono_db = efectiva.tono
+    variante_db = efectiva.variante
     nombre_contexto = contexto_db.nombre if contexto_db else None
-
-    tono_db = sesion.scalar(
-        select(Tono).where(Tono.id_tono == config.id_tono)
-    ) if config.id_tono else None
     nombre_tono = tono_db.nombre if tono_db else None
-
-    variante_db = sesion.scalar(
-        select(VarianteRegional).where(
-            VarianteRegional.id_variante_regional == config.id_variante_regional
-        )
-    ) if config.id_variante_regional else None
     nombre_variante = variante_db.nombre if variante_db else None
 
     # 3. Traduccion central: glosario, localizacion regional y enriquecimiento segun configuracion
@@ -333,8 +338,8 @@ def traducir(
             nombre_tono=nombre_tono,
             variante=variante_db,
             id_glosario=solicitud.id_glosario,
-            generar_alternativas=config.generar_alternativas,
-            explicar_expresiones=config.explicar_expresiones,
+            generar_alternativas=efectiva.generar_alternativas,
+            explicar_expresiones=efectiva.explicar_expresiones,
             analizar_contexto=contexto_db is not None,
         )
     except GlosarioNoEncontradoError as error:
@@ -351,8 +356,26 @@ def traducir(
     glosario_usado = traduccion.glosario_usado
     enriquecimiento = traduccion.enriquecimiento
 
-    # 4. Guardar registro en la tabla traduccion si los idiomas existen en la base de datos
+    # 4. Sugerencias del historial del usuario en el mismo par de idiomas (HU-44). Se buscan
+    #    antes de guardar esta traduccion para no sugerirla a si misma; si falla, se omiten.
+    sugerencias = []
     if traduccion.id_idioma_origen and traduccion.id_idioma_destino:
+        try:
+            sugerencias = buscar_traducciones_similares(
+                sesion=sesion,
+                id_usuario=usuario.id,
+                texto=solicitud.texto_origen,
+                id_idioma_origen=traduccion.id_idioma_origen,
+                id_idioma_destino=traduccion.id_idioma_destino,
+                excluir_traduccion=traduccion.traduccion,
+            )
+        except Exception:  # noqa: BLE001 - las sugerencias nunca deben impedir traducir
+            sugerencias = []
+
+    # 5. Guardar registro en la tabla traduccion si los idiomas existen en la base de datos
+    #    (salvo que el cliente pida no guardarla, p. ej. la traduccion automatica al escribir)
+    registro_traduccion = None
+    if solicitud.guardar_en_historial and traduccion.id_idioma_origen and traduccion.id_idioma_destino:
         registro_traduccion = Traduccion(
             texto_original=solicitud.texto_origen,
             texto_traducido=traduccion.traduccion,
@@ -368,29 +391,72 @@ def traducir(
     return RespuestaTraduccion(
         mensaje="Traduccion realizada correctamente.",
         resultado=TraduccionResultado(
+            id_traduccion=registro_traduccion.id_traduccion if registro_traduccion else None,
             texto_origen=traduccion.texto_origen,
             idioma_origen=traduccion.idioma_origen,
             idioma_destino=traduccion.idioma_destino,
             traduccion=traduccion.traduccion,
             confianza_deteccion=traduccion.confianza_deteccion,
             id_configuracion_traduccion=config.id_configuracion_traduccion,
-            id_contexto=config.id_contexto,
+            id_contexto=contexto_db.id_contexto if contexto_db else config.id_contexto,
             nombre_contexto=nombre_contexto,
-            id_tono=config.id_tono,
+            id_tono=tono_db.id_tono if tono_db else None,
             nombre_tono=nombre_tono,
-            id_variante_regional=config.id_variante_regional,
+            id_variante_regional=variante_db.id_variante_regional if variante_db else None,
             nombre_variante_regional=nombre_variante,
             region_aplicada=traduccion.region_aplicada,
             estado_region=traduccion.estado_region,
-            explicar_expresiones=config.explicar_expresiones,
-            explicaciones_procesadas=config.explicar_expresiones and enriquecimiento.procesado,
-            generar_alternativas=config.generar_alternativas,
+            explicar_expresiones=efectiva.explicar_expresiones,
+            explicaciones_procesadas=efectiva.explicar_expresiones and enriquecimiento.procesado,
+            generar_alternativas=efectiva.generar_alternativas,
             alternativas=enriquecimiento.resultado.alternativas,
             explicacion_expresiones=enriquecimiento.resultado.explicacion_expresiones,
             analisis_contextual=traduccion.analisis_contextual,
             id_glosario=glosario_usado.id_glosario if glosario_usado else None,
             nombre_glosario=glosario_usado.nombre if glosario_usado else None,
             terminos_glosario_aplicados=traduccion.terminos_glosario_aplicados,
+            sugerencias=sugerencias,
+        ),
+    )
+
+
+@enrutador.post(
+    "/historial",
+    response_model=RespuestaRegistrarTraduccion,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar una traduccion terminada en el historial (requiere token)",
+    description=(
+        "Guarda en el historial del usuario una traduccion ya realizada, sin volver a traducir. "
+        "El cliente la usa cuando tradujo con 'guardar_en_historial: false' (traduccion automatica "
+        "mientras se escribe) y el usuario termino. 'texto_traducido' es el resultado que el "
+        "usuario uso (puede ser una alternativa o una sugerencia)."
+    ),
+)
+def registrar_en_historial(
+    datos: SolicitudRegistrarTraduccion,
+    usuario: Usuario = Depends(requiere_token),
+    sesion: Session = Depends(obtener_sesion),
+) -> RespuestaRegistrarTraduccion:
+    try:
+        registro = registrar_traduccion(
+            sesion=sesion,
+            id_usuario=usuario.id,
+            texto_original=datos.texto_original,
+            texto_traducido=datos.texto_traducido,
+            codigo_idioma_origen=datos.idioma_origen,
+            codigo_idioma_destino=datos.idioma_destino,
+            id_glosario=datos.id_glosario,
+        )
+    except GlosarioNoEncontradoError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+    return RespuestaRegistrarTraduccion(
+        mensaje="Traduccion guardada en el historial.",
+        resultado=TraduccionRegistrada(
+            id_traduccion=registro.id_traduccion,
+            fecha_creacion=registro.fecha_creacion,
         ),
     )
 

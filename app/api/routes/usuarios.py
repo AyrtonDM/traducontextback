@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import math
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database.conexion import obtener_sesion
@@ -18,6 +21,12 @@ from app.schemas.usuario import (
     ListaUsuariosRespuesta,
     UsuarioPerfilDetalle,
     RolDetalle,
+    CambiarRolUsuarioSolicitud,
+    ListaRolesRespuesta,
+    ListaUsuariosPaginada,
+    UsuarioAdminDetalle,
+    UsuarioAdminRespuesta,
+    UsuarioAdminResumen,
 )
 from app.services.usuarios import (
     CodigoVerificacionInvalidoError,
@@ -25,12 +34,21 @@ from app.services.usuarios import (
     RolUsuarioNoExisteError,
     UsuarioNoEncontradoError,
     UsuarioYaActivoError,
+    UsuarioSuspendidoError,
+    OperacionAdministracionInvalidaError,
+    RolNoEncontradoError,
     obtener_usuario_actual,
     registrar_usuario,
     reenviar_codigo_verificacion,
     verificar_codigo_usuario,
-    obtener_todos_usuarios,
     obtener_permisos_usuario,
+    listar_usuarios_admin,
+    obtener_usuario_admin,
+    obtener_resumen_actividad_usuario,
+    suspender_usuario,
+    reactivar_usuario,
+    cambiar_rol_usuario,
+    listar_roles,
 )
 from app.utilities.correo import CorreoNoConfiguradoError, EnvioCorreoError
 
@@ -89,6 +107,12 @@ def reenviar_codigo(
 ) -> ReenviarCodigoRespuesta:
     try:
         usuario = reenviar_codigo_verificacion(sesion, datos)
+    except UsuarioSuspendidoError as error:
+        sesion.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(error),
+        ) from error
     except UsuarioNoEncontradoError as error:
         sesion.rollback()
         raise HTTPException(
@@ -127,6 +151,12 @@ def verificar_codigo(
 ) -> VerificarCodigoRespuesta:
     try:
         usuario = verificar_codigo_usuario(sesion, datos)
+    except UsuarioSuspendidoError as error:
+        sesion.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(error),
+        ) from error
     except (CodigoVerificacionInvalidoError, UsuarioYaActivoError) as error:
         sesion.rollback()
         raise HTTPException(
@@ -179,18 +209,184 @@ def obtener_mi_perfil(
     )
 
 
+# ---------------------------------------------------------------------------
+# Administracion de usuarios (HU-05): solo roles con el permiso gestionar_usuarios
+# ---------------------------------------------------------------------------
+
+PERMISO_GESTIONAR_USUARIOS = "gestionar_usuarios"
+
+
+def _armar_detalle_admin(sesion: Session, usuario: Usuario) -> UsuarioAdminDetalle:
+    return UsuarioAdminDetalle(
+        id=usuario.id,
+        nombre=usuario.nombre,
+        correo=usuario.correo,
+        estado=usuario.estado,
+        fecha_creacion=usuario.fecha_creacion,
+        fecha_actualizacion=usuario.fecha_actualizacion,
+        foto_perfil=usuario.foto_perfil,
+        rol=RolDetalle.model_validate(usuario.rol),
+        **obtener_resumen_actividad_usuario(sesion, usuario.id),
+    )
+
+
+def _error_administracion(error: Exception) -> HTTPException:
+    if isinstance(error, (UsuarioNoEncontradoError, RolNoEncontradoError)):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error))
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
+
+
 @enrutador.get(
     "",
     response_model=ListaUsuariosRespuesta,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(requiere_permiso("gestionar_usuarios"))],
+    dependencies=[Depends(requiere_permiso(PERMISO_GESTIONAR_USUARIOS))],
+    summary="Listar usuarios (administrador)",
+    description=(
+        "Listado paginado de cuentas con nombre, correo, rol, estado y fecha de registro. "
+        "Permite buscar por nombre o correo y filtrar por rol y estado. Los filtros se combinan."
+    ),
 )
 def listar_usuarios(
+    pagina: int = Query(default=1, ge=1),
+    tamano_pagina: int = Query(default=10, ge=1, le=100),
+    busqueda: str | None = Query(default=None, max_length=100, description="Nombre o correo"),
+    id_rol: int | None = Query(default=None),
+    estado: Literal["ACTIVO", "INACTIVO", "SUSPENDIDO"] | None = Query(default=None),
     sesion: Session = Depends(obtener_sesion),
 ) -> ListaUsuariosRespuesta:
-    usuarios = obtener_todos_usuarios(sesion)
+    usuarios, total = listar_usuarios_admin(
+        sesion,
+        pagina=pagina,
+        tamano_pagina=tamano_pagina,
+        busqueda=busqueda,
+        id_rol=id_rol,
+        estado=estado,
+    )
     return ListaUsuariosRespuesta(
         mensaje="Usuarios obtenidos correctamente.",
-        resultado=usuarios,
+        resultado=ListaUsuariosPaginada(
+            elementos=[UsuarioAdminResumen.model_validate(u) for u in usuarios],
+            total=total,
+            pagina=pagina,
+            tamano_pagina=tamano_pagina,
+            total_paginas=math.ceil(total / tamano_pagina) if total else 0,
+        ),
     )
 
+
+@enrutador.get(
+    "/roles",
+    response_model=ListaRolesRespuesta,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(requiere_permiso(PERMISO_GESTIONAR_USUARIOS))],
+    summary="Listar roles disponibles (administrador)",
+)
+def listar_roles_disponibles(
+    sesion: Session = Depends(obtener_sesion),
+) -> ListaRolesRespuesta:
+    return ListaRolesRespuesta(
+        mensaje="Roles obtenidos correctamente.",
+        resultado=[RolDetalle.model_validate(rol) for rol in listar_roles(sesion)],
+    )
+
+
+@enrutador.get(
+    "/{id_usuario}",
+    response_model=UsuarioAdminRespuesta,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(requiere_permiso(PERMISO_GESTIONAR_USUARIOS))],
+    summary="Detalle de una cuenta (administrador)",
+)
+def obtener_detalle_usuario(
+    id_usuario: int,
+    sesion: Session = Depends(obtener_sesion),
+) -> UsuarioAdminRespuesta:
+    try:
+        usuario = obtener_usuario_admin(sesion, id_usuario)
+    except UsuarioNoEncontradoError as error:
+        raise _error_administracion(error) from error
+
+    return UsuarioAdminRespuesta(
+        mensaje="Usuario obtenido correctamente.",
+        resultado=_armar_detalle_admin(sesion, usuario),
+    )
+
+
+@enrutador.patch(
+    "/{id_usuario}/suspender",
+    response_model=UsuarioAdminRespuesta,
+    status_code=status.HTTP_200_OK,
+    summary="Suspender una cuenta (administrador)",
+    description=(
+        "Suspende una cuenta activa: el usuario no podra iniciar sesion y sus sesiones activas "
+        "se invalidan. No se elimina la informacion asociada. No se puede suspender la propia cuenta."
+    ),
+)
+def suspender_cuenta(
+    id_usuario: int,
+    administrador: Usuario = Depends(requiere_permiso(PERMISO_GESTIONAR_USUARIOS)),
+    sesion: Session = Depends(obtener_sesion),
+) -> UsuarioAdminRespuesta:
+    try:
+        usuario = suspender_usuario(sesion, administrador, id_usuario)
+    except (UsuarioNoEncontradoError, OperacionAdministracionInvalidaError) as error:
+        sesion.rollback()
+        raise _error_administracion(error) from error
+
+    return UsuarioAdminRespuesta(
+        mensaje="Cuenta suspendida correctamente.",
+        resultado=_armar_detalle_admin(sesion, usuario),
+    )
+
+
+@enrutador.patch(
+    "/{id_usuario}/reactivar",
+    response_model=UsuarioAdminRespuesta,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(requiere_permiso(PERMISO_GESTIONAR_USUARIOS))],
+    summary="Reactivar una cuenta suspendida (administrador)",
+)
+def reactivar_cuenta(
+    id_usuario: int,
+    sesion: Session = Depends(obtener_sesion),
+) -> UsuarioAdminRespuesta:
+    try:
+        usuario = reactivar_usuario(sesion, id_usuario)
+    except (UsuarioNoEncontradoError, OperacionAdministracionInvalidaError) as error:
+        sesion.rollback()
+        raise _error_administracion(error) from error
+
+    return UsuarioAdminRespuesta(
+        mensaje="Cuenta reactivada correctamente.",
+        resultado=_armar_detalle_admin(sesion, usuario),
+    )
+
+
+@enrutador.patch(
+    "/{id_usuario}/rol",
+    response_model=UsuarioAdminRespuesta,
+    status_code=status.HTTP_200_OK,
+    summary="Cambiar el rol de un usuario (administrador)",
+    description="Cambia el rol de la cuenta. El administrador no puede quitarse su propio rol.",
+)
+def cambiar_rol(
+    id_usuario: int,
+    datos: CambiarRolUsuarioSolicitud,
+    administrador: Usuario = Depends(requiere_permiso(PERMISO_GESTIONAR_USUARIOS)),
+    sesion: Session = Depends(obtener_sesion),
+) -> UsuarioAdminRespuesta:
+    try:
+        usuario = cambiar_rol_usuario(sesion, administrador, id_usuario, datos.id_rol)
+    except (
+        UsuarioNoEncontradoError,
+        RolNoEncontradoError,
+        OperacionAdministracionInvalidaError,
+    ) as error:
+        sesion.rollback()
+        raise _error_administracion(error) from error
+
+    return UsuarioAdminRespuesta(
+        mensaje="Rol actualizado correctamente.",
+        resultado=_armar_detalle_admin(sesion, usuario),
+    )

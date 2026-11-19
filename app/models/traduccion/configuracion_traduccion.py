@@ -36,8 +36,19 @@ class ConfiguracionTraduccion(Base):
         index=True,
         nullable=True,
     )
+    # Preferencias de traduccion (HU-33): idioma de destino y glosario predeterminados
+    id_idioma_destino: Mapped[int | None] = mapped_column(
+        ForeignKey("idioma.id_idioma"),
+        nullable=True,
+    )
+    id_glosario: Mapped[int | None] = mapped_column(
+        ForeignKey("glosario.id_glosario", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     contexto = relationship("Contexto", back_populates="configuraciones_traduccion")
+    idioma_destino = relationship("Idioma", foreign_keys=[id_idioma_destino])
+    glosario = relationship("Glosario", foreign_keys=[id_glosario])
     tono = relationship("Tono", back_populates="configuraciones_traduccion")
     variante_regional = relationship(
         "VarianteRegional",

@@ -1,8 +1,8 @@
 from datetime import UTC, datetime, timedelta, timezone
 
 from fastapi import Depends, Header, HTTPException, status
-from sqlalchemy import select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, select, update
+from sqlalchemy.orm import Session, selectinload
 
 from app.database.conexion import obtener_sesion
 from app.models.usuario.codigo_verificacion import CodigoVerificacion
@@ -23,7 +23,11 @@ from app.utilities.seguridad import generar_codigo_verificacion, hashear_contras
 
 ESTADO_ACTIVO = "ACTIVO"
 ESTADO_INACTIVO = "INACTIVO"
+ESTADO_SUSPENDIDO = "SUSPENDIDO"
+ESTADOS_USUARIO = (ESTADO_ACTIVO, ESTADO_INACTIVO, ESTADO_SUSPENDIDO)
 ROL_USUARIO = "USUARIO"
+ROL_ADMINISTRADOR = "ADMINISTRADOR"
+MENSAJE_CUENTA_SUSPENDIDA = "La cuenta esta suspendida. Contacta con un administrador."
 MINUTOS_EXPIRACION_CODIGO = 10
 
 
@@ -129,6 +133,18 @@ class UsuarioNoEncontradoError(ValueError):
     pass
 
 
+class UsuarioSuspendidoError(ValueError):
+    pass
+
+
+class OperacionAdministracionInvalidaError(ValueError):
+    """Accion de administracion no permitida (sobre la propia cuenta o por el estado actual)."""
+
+
+class RolNoEncontradoError(ValueError):
+    pass
+
+
 def registrar_usuario(
     sesion: Session,
     datos: RegistroUsuarioSolicitud,
@@ -184,6 +200,9 @@ def reenviar_codigo_verificacion(
     if usuario is None:
         raise UsuarioNoEncontradoError("No existe un usuario con ese correo.")
 
+    if usuario.estado == ESTADO_SUSPENDIDO:
+        raise UsuarioSuspendidoError(MENSAJE_CUENTA_SUSPENDIDA)
+
     if usuario.estado == ESTADO_ACTIVO:
         raise UsuarioYaActivoError("El usuario ya se encuentra activo.")
 
@@ -216,6 +235,9 @@ def verificar_codigo_usuario(
 
     if usuario is None:
         raise CodigoVerificacionInvalidoError("Codigo de verificacion invalido.")
+
+    if usuario.estado == ESTADO_SUSPENDIDO:
+        raise UsuarioSuspendidoError(MENSAJE_CUENTA_SUSPENDIDA)
 
     if usuario.estado == ESTADO_ACTIVO:
         raise UsuarioYaActivoError("El usuario ya se encuentra activo.")
@@ -271,7 +293,149 @@ def enviar_correo_verificacion(correo: str, nombre: str, codigo: str) -> None:
     )
 
 
-def obtener_todos_usuarios(sesion: Session) -> list[Usuario]:
-    """Retorna la lista de todos los usuarios registrados en el sistema."""
-    return list(sesion.scalars(select(Usuario)).all())
+# ---------------------------------------------------------------------------
+# Administracion de usuarios (HU-05)
+# ---------------------------------------------------------------------------
+
+
+def listar_usuarios_admin(
+    sesion: Session,
+    pagina: int = 1,
+    tamano_pagina: int = 10,
+    busqueda: str | None = None,
+    id_rol: int | None = None,
+    estado: str | None = None,
+) -> tuple[list[Usuario], int]:
+    """
+    Lista paginada de usuarios con busqueda por nombre o correo y filtros por rol y estado.
+    Retorna (usuarios de la pagina, total de coincidencias).
+    """
+    filtros = []
+    if busqueda and busqueda.strip():
+        patron = f"%{busqueda.strip()}%"
+        filtros.append(or_(Usuario.nombre.ilike(patron), Usuario.correo.ilike(patron)))
+    if id_rol is not None:
+        filtros.append(Usuario.id_rol == id_rol)
+    if estado:
+        filtros.append(Usuario.estado == estado)
+
+    total = sesion.scalar(select(func.count()).select_from(Usuario).where(*filtros)) or 0
+    usuarios = sesion.scalars(
+        select(Usuario)
+        .options(selectinload(Usuario.rol))
+        .where(*filtros)
+        .order_by(Usuario.fecha_creacion.desc(), Usuario.id.desc())
+        .offset((pagina - 1) * tamano_pagina)
+        .limit(tamano_pagina)
+    ).all()
+    return list(usuarios), total
+
+
+def obtener_usuario_admin(sesion: Session, id_usuario: int) -> Usuario:
+    usuario = sesion.scalar(
+        select(Usuario).options(selectinload(Usuario.rol)).where(Usuario.id == id_usuario)
+    )
+    if usuario is None:
+        raise UsuarioNoEncontradoError("El usuario no existe.")
+    return usuario
+
+
+def obtener_resumen_actividad_usuario(sesion: Session, id_usuario: int) -> dict:
+    """Datos complementarios del detalle de una cuenta: accesos y uso de la plataforma."""
+    from app.models.conversacion.conversacion import Conversacion
+    from app.models.documento.documento import Documento
+    from app.models.glosario.glosario import Glosario
+    from app.models.traduccion.traduccion import Traduccion
+
+    def contar(modelo) -> int:
+        return sesion.scalar(
+            select(func.count()).select_from(modelo).where(modelo.id_usuario == id_usuario)
+        ) or 0
+
+    return {
+        "ultimo_acceso": sesion.scalar(
+            select(func.max(Sesion.fecha_inicio)).where(Sesion.id_usuario == id_usuario)
+        ),
+        "sesiones_activas": sesion.scalar(
+            select(func.count())
+            .select_from(Sesion)
+            .where(Sesion.id_usuario == id_usuario, Sesion.estado == "ACTIVA")
+        ) or 0,
+        "total_traducciones": contar(Traduccion),
+        "total_documentos": contar(Documento),
+        "total_conversaciones": contar(Conversacion),
+        "total_glosarios": contar(Glosario),
+    }
+
+
+def cerrar_sesiones_usuario(sesion: Session, id_usuario: int) -> None:
+    """Invalida todas las sesiones activas del usuario."""
+    sesion.execute(
+        update(Sesion)
+        .where(Sesion.id_usuario == id_usuario)
+        .where(Sesion.estado == "ACTIVA")
+        .values(estado="CERRADA", fecha_cierre=datetime.now(UTC))
+    )
+
+
+def suspender_usuario(sesion: Session, administrador: Usuario, id_usuario: int) -> Usuario:
+    """Suspende una cuenta activa e invalida sus sesiones. No elimina informacion asociada."""
+    if administrador.id == id_usuario:
+        raise OperacionAdministracionInvalidaError("No puedes suspender tu propia cuenta.")
+
+    usuario = obtener_usuario_admin(sesion, id_usuario)
+    if usuario.estado == ESTADO_SUSPENDIDO:
+        raise OperacionAdministracionInvalidaError("La cuenta ya se encuentra suspendida.")
+    if usuario.estado != ESTADO_ACTIVO:
+        raise OperacionAdministracionInvalidaError(
+            "Solo se pueden suspender cuentas activas; esta cuenta aun no fue verificada."
+        )
+
+    usuario.estado = ESTADO_SUSPENDIDO
+    usuario.fecha_actualizacion = datetime.now(UTC)
+    cerrar_sesiones_usuario(sesion, usuario.id)
+    sesion.commit()
+    sesion.refresh(usuario)
+    return usuario
+
+
+def reactivar_usuario(sesion: Session, id_usuario: int) -> Usuario:
+    usuario = obtener_usuario_admin(sesion, id_usuario)
+    if usuario.estado != ESTADO_SUSPENDIDO:
+        raise OperacionAdministracionInvalidaError("Solo se pueden reactivar cuentas suspendidas.")
+
+    usuario.estado = ESTADO_ACTIVO
+    usuario.fecha_actualizacion = datetime.now(UTC)
+    sesion.commit()
+    sesion.refresh(usuario)
+    return usuario
+
+
+def cambiar_rol_usuario(
+    sesion: Session,
+    administrador: Usuario,
+    id_usuario: int,
+    id_rol: int,
+) -> Usuario:
+    rol = sesion.get(Rol, id_rol)
+    if rol is None:
+        raise RolNoEncontradoError("El rol indicado no existe.")
+
+    if administrador.id == id_usuario and rol.nombre != ROL_ADMINISTRADOR:
+        raise OperacionAdministracionInvalidaError(
+            "No puedes quitarte el rol de Administrador."
+        )
+
+    usuario = obtener_usuario_admin(sesion, id_usuario)
+    if usuario.id_rol != rol.id:
+        usuario.id_rol = rol.id
+        usuario.fecha_actualizacion = datetime.now(UTC)
+        sesion.commit()
+        sesion.expire(usuario, ["rol"])
+        sesion.refresh(usuario)
+    return usuario
+
+
+def listar_roles(sesion: Session) -> list[Rol]:
+    return list(sesion.scalars(select(Rol).order_by(Rol.id)).all())
 

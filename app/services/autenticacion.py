@@ -47,6 +47,11 @@ def iniciar_sesion(sesion_db: Session, datos: LoginSolicitud) -> Sesion:
     if not verificar_contrasena(datos.contrasena, usuario.contrasena):
         raise CredencialesInvalidasError("Correo o contrasena incorrectos.")
 
+    if usuario.estado == "SUSPENDIDO":
+        raise UsuarioInactivoError(
+            "La cuenta esta suspendida. Contacta con un administrador."
+        )
+
     if usuario.estado != "ACTIVO":
         raise UsuarioInactivoError("La cuenta del usuario no esta activa.")
 

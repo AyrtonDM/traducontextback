@@ -53,6 +53,12 @@ from app.schemas.usuario import (
     UsuarioDetalle,
     UsuarioDetalleRespuesta,
     ListaUsuariosRespuesta,
+    UsuarioAdminResumen,
+    UsuarioAdminDetalle,
+    ListaUsuariosPaginada,
+    UsuarioAdminRespuesta,
+    CambiarRolUsuarioSolicitud,
+    ListaRolesRespuesta,
 )
 from app.schemas.variante_regional import (
     VarianteRegionalDetalle,
@@ -103,4 +109,10 @@ __all__ = [
     "UsuarioDetalle",
     "UsuarioDetalleRespuesta",
     "ListaUsuariosRespuesta",
+    "UsuarioAdminResumen",
+    "UsuarioAdminDetalle",
+    "ListaUsuariosPaginada",
+    "UsuarioAdminRespuesta",
+    "CambiarRolUsuarioSolicitud",
+    "ListaRolesRespuesta",
 ]

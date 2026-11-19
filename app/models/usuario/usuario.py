@@ -10,7 +10,7 @@ class Usuario(Base):
     __tablename__ = "usuario"
     __table_args__ = (
         CheckConstraint(
-            "estado in ('ACTIVO', 'INACTIVO')",
+            "estado in ('ACTIVO', 'INACTIVO', 'SUSPENDIDO')",
             name="ck_usuario_estado",
         ),
     )
