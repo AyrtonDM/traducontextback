@@ -42,6 +42,25 @@ services:
       - ./credenciales:/app/credenciales:ro
       - hf_cache:/app/.cache/huggingface
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: traducontext_https
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      BACKEND_DOMAIN: ${BACKEND_DOMAIN:-traduback.duckdns.org}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
 volumes:
   postgres_data:
   hf_cache:
+  caddy_data:
+  caddy_config:
