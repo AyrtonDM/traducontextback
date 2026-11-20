@@ -1,9 +1,12 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.glosario import TerminoAplicado
+
+
+LONGITUD_MAXIMA_DESCRIPCION_CONTEXTO = 1000
 
 
 class SolicitudTraduccion(BaseModel):
@@ -40,6 +43,27 @@ class SolicitudTraduccion(BaseModel):
         default=None,
         description="Generar alternativas en esta traduccion",
     )
+    # Contexto libre solo para esta traduccion (no se guarda en la configuracion)
+    descripcion_contexto: str | None = Field(
+        default=None,
+        max_length=LONGITUD_MAXIMA_DESCRIPCION_CONTEXTO,
+        description="Situacion, audiencia o terminologia de este texto (opcional)",
+    )
+    adaptar_contexto: bool = Field(
+        default=True,
+        description=(
+            "Si hay contexto, tono o descripcion, la traduccion se adapta a ellos con el modelo de "
+            "lenguaje (si falla o tarda, se devuelve la de NLLB). Enviar false para una traduccion "
+            "rapida solo con NLLB (p. ej. borradores mientras se escribe)."
+        ),
+    )
+
+    @field_validator("descripcion_contexto")
+    @classmethod
+    def limpiar_descripcion(cls, valor: str | None) -> str | None:
+        if valor is None:
+            return None
+        return valor.strip() or None
 
     def valores_sobrescritos(self) -> dict:
         """Campos de configuracion enviados explicitamente en la solicitud."""
@@ -119,8 +143,11 @@ class TraduccionResultado(BaseModel):
     id_configuracion_traduccion: int | None = None
     id_contexto: int | None = None
     nombre_contexto: str | None = None
+    descripcion_contexto: str | None = None
     id_tono: int | None = None
     nombre_tono: str | None = None
+    # True si la traduccion final se adapto al contexto/tono; false si es la de NLLB
+    contexto_aplicado: bool = False
     id_variante_regional: int | None = None
     nombre_variante_regional: str | None = None
     # Localizacion cultural (HU-17)

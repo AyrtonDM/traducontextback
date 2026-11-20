@@ -25,6 +25,10 @@ from app.services.detector_idioma import DetectorIdioma
 from app.services.glosarios import obtener_glosario_para_traduccion
 from app.services.traduccion import detector_idioma, motor_nllb
 
+class TraduccionDocumentoFallidaError(RuntimeError):
+    """La traduccion empezo pero fallo (motor, archivo corrupto...). No es un error de validacion."""
+
+
 CARPETA_ORIGINAL = RUTA_BASE / "documentos" / "original"
 CARPETA_TRADUCIDO = RUTA_BASE / "documentos" / "traducido"
 
@@ -392,6 +396,32 @@ def ejecutar_traduccion_documento(
     nombre_traducido = f"traducido_{documento.nombre}"
     nombre_guardado_trad = f"{uuid.uuid4().hex}_{nombre_traducido}"
     ruta_salida = CARPETA_TRADUCIDO / nombre_guardado_trad
+
+    # Ejecutar la traduccion segun la extension
+    extension = documento.extension.lower()
+    traductores = {
+        "docx": traducir_archivo_docx,
+        "xlsx": traducir_archivo_xlsx,
+        "pdf": traducir_archivo_pdf,
+    }
+    traductor = traductores.get(extension)
+    if traductor is None:
+        raise ValueError(f"Formato de archivo .{extension} no soportado para traduccion. Solo se permiten .docx, .xlsx y .pdf.")
+
+    try:
+        traductor(
+            ruta_entrada=ruta_origen,
+            ruta_salida=ruta_salida,
+            idioma_origen=idioma_orig_db.codigo,
+            idioma_destino=idioma_dest_db.codigo,
+            reglas=reglas,
+        )
+    except Exception as error:
+        # Fallo durante la traduccion (no de validacion): se borra el archivo a medias
+        ruta_salida.unlink(missing_ok=True)
+        raise TraduccionDocumentoFallidaError(
+            "Ocurrio un error al traducir el documento. Intentalo de nuevo."
+        ) from error
 
     # Ejecutar la traduccion segun la extension
     extension = documento.extension.lower()

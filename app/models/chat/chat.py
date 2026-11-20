@@ -1,9 +1,12 @@
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
+
+
+LONGITUD_MAXIMA_DESCRIPCION_CONTEXTO_CHAT = 1000
 
 
 class Chat(Base):
@@ -38,6 +41,18 @@ class Chat(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Contexto de la conversacion (comun a los dos miembros). Si hay contexto o descripcion, las
+    # traducciones de los mensajes se adaptan con el modelo de lenguaje; si no, solo NLLB.
+    id_contexto: Mapped[int | None] = mapped_column(
+        ForeignKey("contexto.id_contexto", ondelete="SET NULL"),
+        nullable=True,
+    )
+    descripcion_contexto: Mapped[str | None] = mapped_column(
+        String(LONGITUD_MAXIMA_DESCRIPCION_CONTEXTO_CHAT),
+        nullable=True,
+    )
+
+    contexto = relationship("Contexto")
 
     participantes = relationship(
         "ParticipanteChat",

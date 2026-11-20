@@ -9,15 +9,21 @@ Reglas:
 - Cada destinatario recibe el mensaje en su idioma de lectura de ese chat (solo NLLB). Si cambia ese
   idioma se retraducen en segundo plano los ultimos mensajes; mientras tanto se entrega el original
   con estado_lectura 'pendiente'.
-- El texto de los mensajes nunca se escribe en los logs.
+- Si el chat tiene contexto (de dominio y/o descripcion libre) la traduccion NLLB se adapta con el
+  modelo de lenguaje segun ese contexto, con tiempo maximo; si falla se conserva la de NLLB.
+- Cada mensaje nuevo genera un aviso MENSAJE_CHAT para el destinatario (bandeja + push), uno por
+  chat que se actualiza; al leer el chat el aviso queda leido.
+- El texto de los mensajes nunca se escribe en los logs ni viaja en las notificaciones.
 """
 
 import logging
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from fastapi import BackgroundTasks
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -40,8 +46,15 @@ from app.models.chat.traduccion_mensaje_chat import (
 )
 from app.models.traduccion.idioma import Idioma
 from app.models.usuario.usuario import Usuario
-from app.schemas.chat import ChatDetalle, IdiomaResumen, MensajeChatDetalle, UsuarioChatResumen
-from app.services.configuracion_traduccion import obtener_configuracion_usuario
+from app.schemas.chat import (
+    ChatDetalle,
+    ContextoChatResumen,
+    IdiomaResumen,
+    MensajeChatDetalle,
+    UsuarioChatResumen,
+)
+from app.services import notificaciones
+from app.services.configuracion_traduccion import obtener_configuracion_usuario, validar_contexto
 from app.services.traduccion import detector_idioma
 from app.services.traduccion_contextual import traducir_con_configuracion
 from app.services.usuarios import ESTADO_ACTIVO
@@ -67,6 +80,9 @@ MAXIMO_MENSAJES_POR_MINUTO = 20
 # NLLB consume mucha CPU/memoria: como maximo estas traducciones de chat a la vez por proceso
 MAXIMO_TRADUCCIONES_SIMULTANEAS = 2
 _semaforo_traduccion = threading.BoundedSemaphore(MAXIMO_TRADUCCIONES_SIMULTANEAS)
+
+# Adaptacion al contexto con el modelo de lenguaje: si tarda mas, se entrega la traduccion de NLLB
+TIEMPO_MAXIMO_LLM_CHAT_SEGUNDOS = 8.0
 
 CODIGO_IDIOMA_POR_DEFECTO = "es"
 MENSAJE_ERROR_TRADUCCION = "No se pudo traducir el mensaje."
@@ -107,14 +123,52 @@ def _detectar(texto: str) -> dict:
     return detector_idioma.detectar(texto)
 
 
-def _traducir(sesion: Session, id_usuario: int, texto: str, codigo_origen: str, codigo_destino: str) -> str:
-    """Solo NLLB: sin glosario, sin modelo de lenguaje (todas las opciones de enriquecimiento apagadas)."""
+@dataclass(frozen=True)
+class ContextoTraduccionChat:
+    nombre: str | None
+    descripcion: str | None
+
+
+def _contexto_de_chat(chat: Chat | None) -> ContextoTraduccionChat | None:
+    """Contexto del chat para traducir, o None si no tiene (entonces solo se usa NLLB)."""
+    if chat is None:
+        return None
+    contexto = chat.contexto if chat.id_contexto else None
+    descripciones = [contexto.descripcion if contexto else None, chat.descripcion_contexto]
+    descripcion = "\n".join(d for d in descripciones if d) or None
+    nombre = contexto.nombre if contexto else None
+    if not nombre and not descripcion:
+        return None
+    return ContextoTraduccionChat(nombre=nombre, descripcion=descripcion)
+
+
+def _traducir(
+    sesion: Session,
+    id_usuario: int,
+    texto: str,
+    codigo_origen: str,
+    codigo_destino: str,
+    contexto: ContextoTraduccionChat | None = None,
+) -> str:
+    """
+    Sin contexto: solo NLLB (sin glosario ni modelo de lenguaje). Con contexto: la traduccion de
+    NLLB se adapta al contexto con el modelo de lenguaje (si falla o tarda, se conserva la de NLLB).
+    """
+    opciones = {}
+    if contexto is not None:
+        opciones = {
+            "nombre_contexto": contexto.nombre,
+            "descripcion_contexto": contexto.descripcion,
+            "adaptar_estilo": True,
+            "tiempo_maximo_llm": TIEMPO_MAXIMO_LLM_CHAT_SEGUNDOS,
+        }
     resultado = traducir_con_configuracion(
         sesion=sesion,
         id_usuario=id_usuario,
         texto=texto,
         idioma_origen=codigo_origen,
         idioma_destino=codigo_destino,
+        **opciones,
     )
     return resultado.traduccion
 
@@ -188,10 +242,13 @@ def crear_u_obtener_chat(
     id_usuario: int,
     id_otro_usuario: int,
     codigo_idioma_lectura: str | None = None,
+    campos_contexto: dict | None = None,
 ) -> tuple[Chat, bool]:
     """
     Devuelve (chat, creado). Idempotente: si el par ya tiene chat se devuelve ese (el idioma
     indicado solo se usa al crearlo; despues se cambia con cambiar_idioma_lectura).
+    `campos_contexto` (id_contexto y/o descripcion_contexto enviados) se aplica al chat tanto si se
+    crea como si ya existia.
     """
     if id_otro_usuario == id_usuario:
         raise ValueError("No puedes iniciar un chat contigo mismo.")
@@ -206,13 +263,21 @@ def crear_u_obtener_chat(
         else _idioma_predeterminado(sesion, id_usuario)
     )
 
+    campos_contexto = campos_contexto or {}
+    if campos_contexto.get("id_contexto") is not None:
+        validar_contexto(sesion, id_usuario, campos_contexto["id_contexto"])
+
     existente = _buscar_chat_del_par(sesion, id_usuario, id_otro_usuario)
     if existente is not None:
+        if campos_contexto:
+            _aplicar_contexto(existente, campos_contexto)
+            sesion.commit()
         return existente, False
 
     idioma_otro = _idioma_predeterminado(sesion, id_otro_usuario)
     menor, mayor = sorted((id_usuario, id_otro_usuario))
     chat = Chat(id_usuario_menor=menor, id_usuario_mayor=mayor)
+    _aplicar_contexto(chat, campos_contexto)
     sesion.add(chat)
     try:
         sesion.flush()
@@ -230,6 +295,28 @@ def crear_u_obtener_chat(
         return existente, False
     sesion.refresh(chat)
     return chat, True
+
+
+def _aplicar_contexto(chat: Chat, campos: dict) -> None:
+    if "id_contexto" in campos:
+        chat.id_contexto = campos["id_contexto"]
+    if "descripcion_contexto" in campos:
+        chat.descripcion_contexto = campos["descripcion_contexto"]
+
+
+def actualizar_contexto(sesion: Session, id_chat: int, id_usuario: int, campos: dict) -> Chat:
+    """
+    Cualquiera de los dos miembros puede cambiar el contexto del chat. Afecta a los mensajes
+    nuevos; los ya traducidos no se retraducen.
+    """
+    _participacion(sesion, id_chat, id_usuario)
+    if campos.get("id_contexto") is not None:
+        validar_contexto(sesion, id_usuario, campos["id_contexto"])
+    chat = sesion.get(Chat, id_chat)
+    _aplicar_contexto(chat, campos)
+    sesion.commit()
+    sesion.refresh(chat)
+    return chat
 
 
 def _participacion(sesion: Session, id_chat: int, id_usuario: int) -> ParticipanteChat:
@@ -274,6 +361,12 @@ def detalle_chat(sesion: Session, id_chat: int, id_usuario: int) -> ChatDetalle:
         id_chat=chat.id_chat,
         otro_usuario=UsuarioChatResumen(id_usuario=usuario_otro.id, nombre=usuario_otro.nombre),
         mi_idioma_lectura=IdiomaResumen(id_idioma=idioma.id_idioma, codigo=idioma.codigo, nombre=idioma.nombre),
+        contexto=(
+            ContextoChatResumen(id_contexto=chat.contexto.id_contexto, nombre=chat.contexto.nombre)
+            if chat.id_contexto and chat.contexto
+            else None
+        ),
+        descripcion_contexto=chat.descripcion_contexto,
         ultimo_mensaje=detalles_mensajes(sesion, [ultimo], yo)[0] if ultimo else None,
         no_leidos=_contar_no_leidos(sesion, yo),
         fecha_creacion=chat.fecha_creacion,
@@ -392,6 +485,33 @@ def enviar_mensaje(sesion: Session, id_chat: int, id_usuario: int, texto: str) -
     sesion.commit()
     sesion.refresh(mensaje)
     return mensaje, yo
+
+
+def notificar_nuevo_mensaje(
+    sesion: Session,
+    mensaje: MensajeChat,
+    tareas_segundo_plano: BackgroundTasks | None = None,
+) -> None:
+    """
+    Aviso MENSAJE_CHAT (bandeja + push) para cada destinatario. Nunca lanza: si falla, el mensaje
+    ya esta guardado y solo se registra el error.
+    """
+    try:
+        remitente = sesion.get(Usuario, mensaje.id_remitente)
+        nombre = remitente.nombre if remitente else "un usuario"
+        for otro in _otros_participantes(sesion, mensaje.id_chat, mensaje.id_remitente):
+            notificaciones.notificar_mensaje_chat(
+                sesion,
+                id_usuario=otro.id_usuario,
+                id_chat=mensaje.id_chat,
+                id_mensaje=mensaje.id_mensaje,
+                nombre_remitente=nombre,
+                no_leidos=_contar_no_leidos(sesion, otro),
+                tareas_segundo_plano=tareas_segundo_plano,
+            )
+    except Exception as fallo:  # noqa: BLE001
+        sesion.rollback()
+        logger.error("No se pudo notificar el mensaje de chat %s (%s)", mensaje.id_mensaje, type(fallo).__name__)
 
 
 def _preparar_traduccion(sesion: Session, mensaje: MensajeChat, id_destinatario: int, id_idioma_destino: int) -> bool:
@@ -518,7 +638,10 @@ def marcar_leido(sesion: Session, id_chat: int, id_usuario: int, id_mensaje: int
     yo.id_ultimo_mensaje_leido = max(yo.id_ultimo_mensaje_leido or 0, id_mensaje)
     yo.fecha_ultimo_acceso = _ahora()
     sesion.commit()
-    return yo.id_ultimo_mensaje_leido, _contar_no_leidos(sesion, yo)
+    no_leidos = _contar_no_leidos(sesion, yo)
+    if no_leidos == 0:
+        notificaciones.marcar_leidas_de_chat(sesion, id_usuario, id_chat)
+    return yo.id_ultimo_mensaje_leido, no_leidos
 
 
 # ---------------------------------------------------------------------------
@@ -560,13 +683,16 @@ def _traducir_para(sesion: Session, id_mensaje: int, id_destinatario: int) -> No
         codigos = _codigos_idioma(sesion)
         texto, id_remitente = mensaje.texto_original, mensaje.id_remitente
         codigo_origen, codigo_destino = codigos[mensaje.id_idioma_detectado], codigos[id_destino]
+        contexto = _contexto_de_chat(sesion.get(Chat, mensaje.id_chat))
         sesion.commit()
         if not necesita:
             return
 
+        # El contexto solo se pasa si existe (sin el, la llamada es la de siempre: solo NLLB)
+        opciones = {"contexto": contexto} if contexto else {}
         try:
             with _semaforo_traduccion:
-                traduccion = _traducir(sesion, id_remitente, texto, codigo_origen, codigo_destino)
+                traduccion = _traducir(sesion, id_remitente, texto, codigo_origen, codigo_destino, **opciones)
             error = None
         except Exception as fallo:  # noqa: BLE001
             # Solo el tipo de error: el mensaje de la excepcion podria contener el texto

@@ -56,6 +56,9 @@ from app.services.traduccion_contextual import traducir_con_configuracion
 from app.services.variantes_regionales import obtener_todas_variantes_regionales
 
 
+# Adaptacion al contexto/tono con el modelo de lenguaje: si tarda mas, se devuelve la de NLLB
+TIEMPO_MAXIMO_LLM_TRADUCCION_SEGUNDOS = 15.0
+
 enrutador = APIRouter(
     prefix="/traducciones",
     tags=["traducciones"],
@@ -324,6 +327,12 @@ def traducir(
     nombre_contexto = contexto_db.nombre if contexto_db else None
     nombre_tono = tono_db.nombre if tono_db else None
     nombre_variante = variante_db.nombre if variante_db else None
+    # Descripcion del contexto elegido mas la descripcion libre de esta solicitud
+    descripcion_contexto = "
+".join(
+        d for d in (contexto_db.descripcion if contexto_db else None, solicitud.descripcion_contexto) if d
+    ) or None
+    adaptar_estilo = solicitud.adaptar_contexto and bool(nombre_contexto or nombre_tono or descripcion_contexto)
 
     # 3. Traduccion central: glosario, localizacion regional y enriquecimiento segun configuracion
     try:
@@ -334,13 +343,15 @@ def traducir(
             idioma_origen=solicitud.idioma_origen,
             idioma_destino=solicitud.idioma_destino,
             nombre_contexto=nombre_contexto,
-            descripcion_contexto=contexto_db.descripcion if contexto_db else None,
+            descripcion_contexto=descripcion_contexto,
             nombre_tono=nombre_tono,
             variante=variante_db,
             id_glosario=solicitud.id_glosario,
             generar_alternativas=efectiva.generar_alternativas,
             explicar_expresiones=efectiva.explicar_expresiones,
-            analizar_contexto=contexto_db is not None,
+            analizar_contexto=contexto_db is not None or solicitud.descripcion_contexto is not None,
+            adaptar_estilo=adaptar_estilo,
+            tiempo_maximo_llm=TIEMPO_MAXIMO_LLM_TRADUCCION_SEGUNDOS if adaptar_estilo else None,
             aplicar_aprendizaje=True,
         )
     except GlosarioNoEncontradoError as error:
@@ -401,8 +412,11 @@ def traducir(
             id_configuracion_traduccion=config.id_configuracion_traduccion,
             id_contexto=contexto_db.id_contexto if contexto_db else config.id_contexto,
             nombre_contexto=nombre_contexto,
+            descripcion_contexto=solicitud.descripcion_contexto,
             id_tono=tono_db.id_tono if tono_db else None,
             nombre_tono=nombre_tono,
+            # Con variante regional el contexto y el tono van en la misma adaptacion
+            contexto_aplicado=traduccion.estilo_aplicado or (adaptar_estilo and traduccion.region_aplicada),
             id_variante_regional=variante_db.id_variante_regional if variante_db else None,
             nombre_variante_regional=nombre_variante,
             region_aplicada=traduccion.region_aplicada,

@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,11 +24,15 @@ from app.schemas.documento import (
     SolicitudTraducirDocumento,
     TraduccionDocumentoDetalle,
 )
+from app.services import notificaciones
 from app.services.glosarios import GlosarioNoEncontradoError
 from app.services.traduccion_documentos import (
+    TraduccionDocumentoFallidaError,
     ejecutar_traduccion_documento,
     guardar_documento_subido,
 )
+
+logger = logging.getLogger(__name__)
 
 enrutador = APIRouter(
     prefix="/documentos",
@@ -98,11 +104,14 @@ def subir_documento(
         "Toma un documento existente del usuario, traduce su contenido respetando el formato original "
         "e imagenes, genera el archivo traducido en 'documentos/traducido' y registra "
         "la entrada correspondiente en la tabla 'traduccion_documento'. "
-        "Opcionalmente acepta 'id_glosario' para aplicar un glosario del mismo par de idiomas."
+        "Opcionalmente acepta 'id_glosario' para aplicar un glosario del mismo par de idiomas. "
+        "Al terminar se envia un aviso DOCUMENTO_LISTO (datos: id_documento, id_traduccion_documento) "
+        "o, si la traduccion falla, DOCUMENTO_ERROR (datos: id_documento) a la bandeja y por push."
     ),
 )
 def traducir_documento(
     solicitud: SolicitudTraducirDocumento,
+    tareas: BackgroundTasks,
     usuario: Usuario = Depends(requiere_token),
     sesion: Session = Depends(obtener_sesion),
 ) -> RespuestaTraduccionDocumento:
@@ -125,6 +134,16 @@ def traducir_documento(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(error),
         ) from error
+    except TraduccionDocumentoFallidaError as error:
+        logger.error("Fallo la traduccion del documento %s (%s)", solicitud.id_documento, type(error.__cause__).__name__)
+        sesion.rollback()
+        _avisar_documento(sesion, tareas, usuario.id, solicitud.id_documento, None)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
+
+    _avisar_documento(sesion, tareas, usuario.id, trad.id_documento, trad)
 
     idioma_orig = sesion.scalar(
         select(Idioma).where(Idioma.id_idioma == trad.id_idioma_origen)
@@ -155,6 +174,28 @@ def traducir_documento(
         mensaje="Documento traducido correctamente.",
         resultado=detalle,
     )
+
+
+def _avisar_documento(
+    sesion: Session,
+    tareas: BackgroundTasks,
+    id_usuario: int,
+    id_documento: int,
+    traduccion: TraduccionDocumento | None,
+) -> None:
+    """Aviso de documento listo (si hay traduccion) o de error. Un fallo aqui nunca rompe la respuesta."""
+    try:
+        documento = sesion.get(Documento, id_documento)
+        nombre = documento.nombre if documento else "tu documento"
+        if traduccion is not None:
+            notificaciones.notificar_documento_listo(
+                sesion, id_usuario, id_documento, traduccion.id_traduccion_documento, nombre, tareas
+            )
+        else:
+            notificaciones.notificar_documento_error(sesion, id_usuario, id_documento, nombre, tareas)
+    except Exception:  # noqa: BLE001
+        sesion.rollback()
+        logger.exception("No se pudo crear el aviso del documento %s.", id_documento)
 
 
 @enrutador.get(

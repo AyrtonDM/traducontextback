@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database.conexion import obtener_sesion
 from app.models.usuario.usuario import Usuario
 from app.schemas.chat import (
+    ActualizarContextoChatSolicitud,
     BuscarUsuariosRespuesta,
     CambiarIdiomaLecturaSolicitud,
     CrearChatSolicitud,
@@ -83,7 +84,7 @@ def buscar_usuarios(
     responses={
         **RESPUESTA_401,
         status.HTTP_200_OK: {"description": "El chat ya existia.", "model": RespuestaChat},
-        status.HTTP_400_BAD_REQUEST: {"description": "Chat contigo mismo o idioma inexistente."},
+        status.HTTP_400_BAD_REQUEST: {"description": "Chat contigo mismo, idioma o contexto inexistente."},
         status.HTTP_404_NOT_FOUND: {"description": "El usuario no existe o no esta activo."},
     },
 )
@@ -94,7 +95,10 @@ def crear_chat(
     sesion: Session = Depends(obtener_sesion),
 ) -> RespuestaChat:
     try:
-        chat, creado = servicio.crear_u_obtener_chat(sesion, usuario.id, datos.id_usuario, datos.codigo_idioma_lectura)
+        campos_contexto = datos.model_dump(include={"id_contexto", "descripcion_contexto"}, exclude_unset=True)
+        chat, creado = servicio.crear_u_obtener_chat(
+            sesion, usuario.id, datos.id_usuario, datos.codigo_idioma_lectura, campos_contexto
+        )
         detalle = servicio.detalle_chat(sesion, chat.id_chat, usuario.id)
     except ValueError as error:
         raise _a_http(error) from error
@@ -168,6 +172,31 @@ def cambiar_idioma_lectura(
     return RespuestaChat(mensaje="Idioma de lectura actualizado correctamente.", resultado=detalle)
 
 
+@enrutador.patch(
+    "/{id_chat}/contexto",
+    response_model=RespuestaChat,
+    summary="Cambiar el contexto de un chat (requiere token)",
+    description=(
+        "Contexto de dominio y/o descripcion libre de la conversacion, comun a los dos miembros. Solo "
+        "se cambian los campos enviados; null los quita. Con contexto, las traducciones de los "
+        "mensajes nuevos se adaptan a el; los mensajes ya traducidos no cambian."
+    ),
+    responses={**RESPUESTA_401, **RESPUESTA_404_CHAT, status.HTTP_400_BAD_REQUEST: {"description": "Contexto inexistente o inactivo."}},
+)
+def actualizar_contexto(
+    id_chat: int,
+    datos: ActualizarContextoChatSolicitud,
+    usuario: Usuario = Depends(obtener_usuario_actual),
+    sesion: Session = Depends(obtener_sesion),
+) -> RespuestaChat:
+    try:
+        servicio.actualizar_contexto(sesion, id_chat, usuario.id, datos.model_dump(exclude_unset=True))
+        detalle = servicio.detalle_chat(sesion, id_chat, usuario.id)
+    except ValueError as error:
+        raise _a_http(error) from error
+    return RespuestaChat(mensaje="Contexto del chat actualizado correctamente.", resultado=detalle)
+
+
 @enrutador.post(
     "/{id_chat}/mensajes",
     response_model=RespuestaMensaje,
@@ -175,7 +204,8 @@ def cambiar_idioma_lectura(
     summary="Enviar un mensaje (requiere token)",
     description=(
         "Se guarda y se responde al instante. La deteccion de idioma y la traduccion para el otro "
-        "usuario se hacen en segundo plano; consultalo con GET /chats/{id_chat}/mensajes."
+        "usuario se hacen en segundo plano; consultalo con GET /chats/{id_chat}/mensajes. El otro "
+        "usuario recibe un aviso MENSAJE_CHAT (bandeja y push) con datos.id_chat."
     ),
     responses={
         **RESPUESTA_401,
@@ -195,11 +225,10 @@ def enviar_mensaje(
         mensaje, yo = servicio.enviar_mensaje(sesion, id_chat, usuario.id, datos.texto)
     except ValueError as error:
         raise _a_http(error) from error
+    detalle = servicio.detalles_mensajes(sesion, [mensaje], yo)[0]
+    servicio.notificar_nuevo_mensaje(sesion, mensaje, tareas)
     tareas.add_task(servicio.procesar_mensaje, mensaje.id_mensaje)
-    return RespuestaMensaje(
-        mensaje="Mensaje enviado correctamente.",
-        resultado=servicio.detalles_mensajes(sesion, [mensaje], yo)[0],
-    )
+    return RespuestaMensaje(mensaje="Mensaje enviado correctamente.", resultado=detalle)
 
 
 @enrutador.get(
@@ -240,7 +269,10 @@ def listar_mensajes(
     "/{id_chat}/leido",
     response_model=RespuestaLeido,
     summary="Marcar mensajes como leidos (requiere token)",
-    description="Marca como leidos todos los mensajes hasta 'id_mensaje' inclusive. Nunca retrocede.",
+    description=(
+        "Marca como leidos todos los mensajes hasta 'id_mensaje' inclusive. Nunca retrocede. Si ya no "
+        "quedan no leidos, el aviso MENSAJE_CHAT de ese chat queda leido en la bandeja."
+    ),
     responses={**RESPUESTA_401, **RESPUESTA_404_CHAT},
 )
 def marcar_leido(

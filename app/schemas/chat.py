@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.models.chat.chat import LONGITUD_MAXIMA_DESCRIPCION_CONTEXTO_CHAT
 from app.models.chat.mensaje_chat import LONGITUD_MAXIMA_MENSAJE
 
 
@@ -33,6 +34,12 @@ class IdiomaResumen(BaseModel):
     nombre: str
 
 
+def _limpiar_texto_opcional(valor: str | None) -> str | None:
+    if valor is None:
+        return None
+    return valor.strip() or None
+
+
 class CrearChatSolicitud(BaseModel):
     id_usuario: int = Field(..., gt=0, description="Usuario con el que se quiere chatear")
     codigo_idioma_lectura: str | None = Field(
@@ -44,6 +51,45 @@ class CrearChatSolicitud(BaseModel):
             "destino preferido o espanol."
         ),
     )
+    id_contexto: int | None = Field(
+        default=None,
+        description=(
+            "Contexto de dominio de la conversacion (global o personal tuyo). Si el chat ya existia, "
+            "se aplica solo si lo envias."
+        ),
+    )
+    descripcion_contexto: str | None = Field(
+        default=None,
+        max_length=LONGITUD_MAXIMA_DESCRIPCION_CONTEXTO_CHAT,
+        description="Situacion, audiencia o terminologia de la conversacion (opcional)",
+    )
+
+    @field_validator("descripcion_contexto")
+    @classmethod
+    def limpiar_descripcion(cls, valor: str | None) -> str | None:
+        return _limpiar_texto_opcional(valor)
+
+
+class ActualizarContextoChatSolicitud(BaseModel):
+    """Solo se cambian los campos enviados; null quita el contexto o la descripcion."""
+
+    id_contexto: int | None = Field(default=None, description="Nuevo contexto (null lo quita)")
+    descripcion_contexto: str | None = Field(
+        default=None,
+        max_length=LONGITUD_MAXIMA_DESCRIPCION_CONTEXTO_CHAT,
+        description="Nueva descripcion del contexto (null la quita)",
+    )
+
+    @field_validator("descripcion_contexto")
+    @classmethod
+    def limpiar_descripcion(cls, valor: str | None) -> str | None:
+        return _limpiar_texto_opcional(valor)
+
+    @model_validator(mode="after")
+    def validar_campos(self):
+        if not self.model_fields_set:
+            raise ValueError("Debe enviar id_contexto o descripcion_contexto.")
+        return self
 
 
 class CambiarIdiomaLecturaSolicitud(BaseModel):
@@ -82,10 +128,17 @@ class MensajeChatDetalle(BaseModel):
     fecha_envio: datetime
 
 
+class ContextoChatResumen(BaseModel):
+    id_contexto: int
+    nombre: str
+
+
 class ChatDetalle(BaseModel):
     id_chat: int
     otro_usuario: UsuarioChatResumen
     mi_idioma_lectura: IdiomaResumen
+    contexto: ContextoChatResumen | None = None
+    descripcion_contexto: str | None = None
     ultimo_mensaje: MensajeChatDetalle | None
     no_leidos: int
     fecha_creacion: datetime

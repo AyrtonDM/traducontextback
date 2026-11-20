@@ -15,7 +15,13 @@ from sqlalchemy.orm import Session
 
 from app.database.conexion import FabricaSesiones
 from app.models.notificacion.dispositivo_push import DispositivoPush
-from app.models.notificacion.notificacion import TIPOS_NOTIFICACION, Notificacion
+from app.models.notificacion.notificacion import (
+    TIPO_DOCUMENTO_ERROR,
+    TIPO_DOCUMENTO_LISTO,
+    TIPO_MENSAJE_CHAT,
+    TIPOS_NOTIFICACION,
+    Notificacion,
+)
 from app.services import push_fcm
 
 
@@ -228,9 +234,116 @@ def notificar(
     sesion.add(notificacion)
     sesion.commit()
     sesion.refresh(notificacion)
-
-    if tareas_segundo_plano is not None:
-        tareas_segundo_plano.add_task(_enviar_push_en_segundo_plano, notificacion.id_notificacion)
-    else:
-        enviar_push_notificacion(sesion, notificacion.id_notificacion)
+    _despachar_push(sesion, notificacion.id_notificacion, tareas_segundo_plano)
     return notificacion
+
+
+def _despachar_push(sesion: Session, id_notificacion: int, tareas_segundo_plano: BackgroundTasks | None) -> None:
+    if tareas_segundo_plano is not None:
+        tareas_segundo_plano.add_task(_enviar_push_en_segundo_plano, id_notificacion)
+    else:
+        enviar_push_notificacion(sesion, id_notificacion)
+
+
+# ---------------------------------------------------------------------------
+# Notificaciones de cada flujo (contrato de `datos` que usan las apps para navegar)
+#   DOCUMENTO_LISTO / DOCUMENTO_ERROR: id_documento y, si existe, id_traduccion_documento
+#   MENSAJE_CHAT: id_chat e id_mensaje (ultimo mensaje recibido)
+# ---------------------------------------------------------------------------
+
+
+def _notificaciones_chat_sin_leer(sesion: Session, id_usuario: int, id_chat: int) -> list[Notificacion]:
+    # Se filtra `datos` en Python: el numero de avisos de chat sin leer de un usuario es pequeno
+    # y asi no depende de los operadores JSON de cada base de datos.
+    candidatas = sesion.scalars(
+        select(Notificacion).where(
+            Notificacion.id_usuario == id_usuario,
+            Notificacion.tipo == TIPO_MENSAJE_CHAT,
+            Notificacion.leida.is_(False),
+        )
+    ).all()
+    return [n for n in candidatas if (n.datos or {}).get("id_chat") == id_chat]
+
+
+def notificar_mensaje_chat(
+    sesion: Session,
+    id_usuario: int,
+    id_chat: int,
+    id_mensaje: int,
+    nombre_remitente: str,
+    no_leidos: int,
+    tareas_segundo_plano: BackgroundTasks | None = None,
+) -> Notificacion:
+    """
+    Una sola entrada por chat en la bandeja: si ya hay un aviso sin leer de ese chat se actualiza
+    (contador y fecha, vuelve arriba) en lugar de crear otro. El push se envia en cada mensaje.
+    El texto del mensaje nunca va en la notificacion.
+    """
+    titulo = f"Nuevo mensaje de {nombre_remitente}"
+    cuerpo = "Tienes 1 mensaje nuevo." if no_leidos <= 1 else f"Tienes {no_leidos} mensajes nuevos."
+    datos = {"id_chat": id_chat, "id_mensaje": id_mensaje}
+
+    existentes = _notificaciones_chat_sin_leer(sesion, id_usuario, id_chat)
+    if not existentes:
+        return notificar(sesion, id_usuario, TIPO_MENSAJE_CHAT, titulo, cuerpo, datos, tareas_segundo_plano)
+
+    notificacion, *duplicadas = existentes
+    for duplicada in duplicadas:
+        sesion.delete(duplicada)
+    notificacion.titulo = titulo[:150]
+    notificacion.cuerpo = cuerpo[:500]
+    notificacion.datos = datos
+    notificacion.fecha_creacion = _ahora()
+    sesion.commit()
+    sesion.refresh(notificacion)
+    _despachar_push(sesion, notificacion.id_notificacion, tareas_segundo_plano)
+    return notificacion
+
+
+def marcar_leidas_de_chat(sesion: Session, id_usuario: int, id_chat: int) -> int:
+    """Al leer un chat su aviso deja de contar como no leido en la bandeja."""
+    pendientes = _notificaciones_chat_sin_leer(sesion, id_usuario, id_chat)
+    ahora = _ahora()
+    for notificacion in pendientes:
+        notificacion.leida = True
+        notificacion.fecha_lectura = ahora
+    if pendientes:
+        sesion.commit()
+    return len(pendientes)
+
+
+def notificar_documento_listo(
+    sesion: Session,
+    id_usuario: int,
+    id_documento: int,
+    id_traduccion_documento: int,
+    nombre_documento: str,
+    tareas_segundo_plano: BackgroundTasks | None = None,
+) -> Notificacion:
+    return notificar(
+        sesion,
+        id_usuario,
+        TIPO_DOCUMENTO_LISTO,
+        "Tu documento esta listo",
+        f"La traduccion de \"{nombre_documento}\" ya se puede descargar.",
+        {"id_documento": id_documento, "id_traduccion_documento": id_traduccion_documento},
+        tareas_segundo_plano,
+    )
+
+
+def notificar_documento_error(
+    sesion: Session,
+    id_usuario: int,
+    id_documento: int,
+    nombre_documento: str,
+    tareas_segundo_plano: BackgroundTasks | None = None,
+) -> Notificacion:
+    return notificar(
+        sesion,
+        id_usuario,
+        TIPO_DOCUMENTO_ERROR,
+        "No se pudo traducir tu documento",
+        f"Ocurrio un error al traducir \"{nombre_documento}\". Intentalo de nuevo.",
+        {"id_documento": id_documento},
+        tareas_segundo_plano,
+    )
