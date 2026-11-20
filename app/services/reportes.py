@@ -9,7 +9,12 @@ El detalle no incluye el contenido traducido por los usuarios: solo metadatos de
 """
 
 import math
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
+
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 from sqlalchemy import Date, Integer, String, cast, func, literal, null, select, union_all
 from sqlalchemy.orm import Session, aliased

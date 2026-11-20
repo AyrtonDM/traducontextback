@@ -67,7 +67,7 @@ def consultar_perfil(
         status.HTTP_401_UNAUTHORIZED: {
             "description": "El token es invalido, expiro o no fue enviado."
         },
-        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
             "description": "Los datos enviados no cumplen el formato requerido."
         },
     },

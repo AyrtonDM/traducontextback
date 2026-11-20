@@ -328,8 +328,7 @@ def traducir(
     nombre_tono = tono_db.nombre if tono_db else None
     nombre_variante = variante_db.nombre if variante_db else None
     # Descripcion del contexto elegido mas la descripcion libre de esta solicitud
-    descripcion_contexto = "
-".join(
+    descripcion_contexto = "\n".join(
         d for d in (contexto_db.descripcion if contexto_db else None, solicitud.descripcion_contexto) if d
     ) or None
     adaptar_estilo = solicitud.adaptar_contexto and bool(nombre_contexto or nombre_tono or descripcion_contexto)

@@ -1,4 +1,9 @@
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
+
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import func, or_, select, update

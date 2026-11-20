@@ -1,4 +1,9 @@
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, timezone
+
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 

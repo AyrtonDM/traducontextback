@@ -80,6 +80,26 @@ def push_disponible() -> bool:
     return obtener_app_firebase() is not None
 
 
+def _configuracion_webpush(datos: dict[str, str]):
+    """
+    Navegadores (Edge, Chrome): entrega inmediata y aviso emergente con sonido del sistema.
+    Los mensajes de un mismo chat comparten `tag` (uno reemplaza al anterior) y `renotify` hace
+    que cada uno vuelva a sonar.
+    """
+    from firebase_admin import messaging
+
+    id_chat = datos.get("id_chat")
+    return messaging.WebpushConfig(
+        headers={"Urgency": "high", "TTL": "86400"},
+        notification=messaging.WebpushNotification(
+            icon="/favicon.ico",
+            tag=f"chat-{id_chat}" if id_chat else f"notificacion-{datos.get('id_notificacion', '')}",
+            renotify=bool(id_chat),
+            silent=False,
+        ),
+    )
+
+
 def enviar_a_tokens(
     tokens: list[str],
     titulo: str,
@@ -102,6 +122,7 @@ def enviar_a_tokens(
         notification=messaging.Notification(title=titulo, body=cuerpo),
         data=datos,
         android=messaging.AndroidConfig(priority="high"),
+        webpush=_configuracion_webpush(datos),
     )
     try:
         respuesta = messaging.send_each_for_multicast(mensaje, app=app)

@@ -46,7 +46,7 @@ enrutador = APIRouter(prefix="/autenticacion", tags=["autenticacion"])
         status.HTTP_403_FORBIDDEN: {
             "description": "La cuenta del usuario no esta activa."
         },
-        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
             "description": "Los datos enviados no cumplen el formato requerido."
         },
     },
