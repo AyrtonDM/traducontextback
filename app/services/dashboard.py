@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models.conversacion.conversacion import Conversacion
 from app.models.documento.traduccion_documento import TraduccionDocumento
+from app.models.integracion.sesion_externa import SesionExterna
 from app.models.traduccion.configuracion_traduccion import ConfiguracionTraduccion
 from app.models.traduccion.contexto import Contexto
 from app.models.traduccion.idioma import Idioma
@@ -115,6 +116,7 @@ def _indicadores_usuarios(sesion: Session, periodo: PeriodoDashboard) -> Indicad
         select(Traduccion.id_usuario).where(_en_periodo(Traduccion.fecha_creacion, periodo)),
         select(TraduccionDocumento.id_usuario).where(_en_periodo(TraduccionDocumento.fecha, periodo)),
         select(Conversacion.id_usuario).where(_en_periodo(Conversacion.fecha_inicio, periodo)),
+        select(SesionExterna.id_usuario).where(_en_periodo(SesionExterna.fecha_creacion, periodo)),
     ).subquery()
     activos = sesion.scalar(select(func.count()).select_from(activos_union)) or 0
 
@@ -132,8 +134,8 @@ def _indicadores_actividad(sesion: Session, periodo: PeriodoDashboard) -> Indica
             TraduccionDocumento.estado == ESTADO_DOCUMENTO_COMPLETADO,
         ),
         conversaciones=_contar(sesion, Conversacion, Conversacion.fecha_inicio, periodo),
-        sesiones_externas=0,
-        sesiones_externas_disponible=False,
+        sesiones_externas=_contar(sesion, SesionExterna, SesionExterna.fecha_creacion, periodo),
+        sesiones_externas_disponible=True,
     )
 
 
@@ -143,6 +145,7 @@ def _idiomas_mas_utilizados(sesion: Session, periodo: PeriodoDashboard) -> list[
         (Traduccion, Traduccion.fecha_creacion),
         (TraduccionDocumento, TraduccionDocumento.fecha),
         (Conversacion, Conversacion.fecha_inicio),
+        (SesionExterna, SesionExterna.fecha_creacion),
     )
     conteo: Counter[int] = Counter()
     for modelo, columna_fecha in fuentes:
@@ -190,7 +193,12 @@ def _contextos_mas_utilizados(sesion: Session, periodo: PeriodoDashboard) -> lis
         .where(_en_periodo(Conversacion.fecha_inicio, periodo), Conversacion.id_contexto.is_not(None))
         .group_by(Conversacion.id_contexto)
     ).all()
-    for id_contexto, total in [*filas_texto, *filas_conversacion]:
+    filas_externas = sesion.execute(
+        select(SesionExterna.id_contexto, func.count())
+        .where(_en_periodo(SesionExterna.fecha_creacion, periodo), SesionExterna.id_contexto.is_not(None))
+        .group_by(SesionExterna.id_contexto)
+    ).all()
+    for id_contexto, total in [*filas_texto, *filas_conversacion, *filas_externas]:
         conteo[id_contexto] += total
 
     if not conteo:

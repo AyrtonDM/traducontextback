@@ -13,7 +13,7 @@ TraduContext es una aplicación de **traducción contextual**: traduce texto, do
 | | Estado |
 |---|---|
 | Sprints 1 y 2 (autenticación, perfil, traducción de texto, documentos, historial, favoritos, glosarios) | Implementados de punta a punta. |
-| Sprint 3 (conversación en tiempo real) | **Muy avanzado.** 8 de 10 HU implementadas (HU-29 y HU-28 todavía sin probar en la app), 1 parcial y 1 por hacer. |
+| Sprint 3 (conversación en tiempo real) | **Implementado.** 10 de 10 HU con backend y frontend; HU-28, HU-29, HU-30 y HU-32 pendientes de prueba manual en la app. |
 
 **Estado del Sprint 3 de un vistazo**
 
@@ -26,9 +26,9 @@ TraduContext es una aplicación de **traducción contextual**: traduce texto, do
 | HU-27 | Visualización de la conversación | Alta | ✅ Completa | — |
 | HU-31 | Participantes y turnos | Media | ✅ Completa | — |
 | HU-28 | Reproducción por voz | Media | ✅ Implementada (frontend), pendiente de prueba manual en la app | Probar en la app |
-| HU-32 | Glosarios personalizados | Media | 🟡 Parcial | Bajo: falta aplicarlo en conversaciones |
+| HU-32 | Glosarios personalizados | Media | ✅ Completa (19/11: glosario en conversaciones), pendiente de prueba en la app | Probar en la app |
 | HU-29 | Contexto de conversación | Alta | ✅ Implementada (backend), pendiente de prueba manual en la app | Probar en la app |
-| HU-30 | Asistencia conversacional | Media | 🔴 Por hacer | Medio: hay piezas reutilizables |
+| HU-30 | Asistencia conversacional | Media | ✅ Implementada (19/11), pendiente de prueba en la app | Probar en la app |
 
 Las HU que faltan **no requieren nuevas tablas grandes ni rediseño**: la sesión ya guarda la preferencia `asistencia_conversacional`, la pantalla ya tiene los botones colocados y la función central de traducción ya acepta los parámetros necesarios. El trabajo restante consiste sobre todo en conectar piezas que ya existen.
 
@@ -100,7 +100,7 @@ Parámetros que ya acepta y que sirven para cerrar el sprint: `id_glosario`, `ge
 | Traducciones | `POST /traducciones`, `POST /traducciones/contextual`, `GET /traducciones/historial`, `PATCH /traducciones/{id}/favorito`, `DELETE /traducciones/{id}` (más alias de catálogos bajo `/traducciones/...`) |
 | Documentos | `POST /documentos/subir`, `POST /documentos/traducir`, `GET /documentos`, `GET /documentos/traducidos`, `GET /documentos/traducciones`, `GET /documentos/{id}/traducciones`, `GET /documentos/descargar/{id}`, `DELETE` de documento y traducción |
 | Glosarios | `POST/GET /glosarios`, `GET/PATCH/DELETE /glosarios/{id}`, `POST /glosarios/{id}/terminos`, `PATCH/DELETE /glosarios/{id}/terminos/{id_termino}` |
-| **Conversaciones** | `POST /conversaciones`, `GET /conversaciones?estado=`, `GET/PATCH /conversaciones/{id}`, `POST /conversaciones/{id}/pausar`, `/reanudar`, `/finalizar` |
+| **Conversaciones** | `POST /conversaciones`, `GET /conversaciones?estado=`, `GET/PATCH /conversaciones/{id}`, `POST /conversaciones/{id}/pausar`, `/reanudar`, `/finalizar`, `POST /conversaciones/{id}/asistencia` (HU-30) |
 | **Participantes** | `GET /conversaciones/{id}/participantes`, `PATCH /conversaciones/{id}/participantes/{id_participante}` |
 | **Intervenciones** | `POST/GET /conversaciones/{id}/intervenciones` (`?despues_de=`), `POST /conversaciones/{id}/intervenciones/{id_int}/reintentar` |
 
@@ -121,8 +121,8 @@ usuario 1──* conversacion *──1 entorno
 ```
 Participantes e intervenciones se borran **en cascada** con la conversación.
 
-**Cadena de migraciones (cabeza actual: `f7c9d1e3a5b7`)**
-`fbd3c3849a40 → a1c2e3f4b5d6 → aa6d30637070 → (b7e1d2c3f4a5 | b7e4c2d9f1a3) → c3d8a9e1f2b4 → d4f1a2b3c5e6 → e5a7b9c1d3f2 → f7c9d1e3a5b7`
+**Cadena de migraciones (cabeza actual: `d6a8c0e2f4b6`)**
+`fbd3c3849a40 → a1c2e3f4b5d6 → aa6d30637070 → (b7e1d2c3f4a5 | b7e4c2d9f1a3) → c3d8a9e1f2b4 → d4f1a2b3c5e6 → e5a7b9c1d3f2 → f7c9d1e3a5b7 → a8b3c5d7e9f1 (HU-33) → c4e6a8b0d2f3 (HU-05) → d6a8c0e2f4b6 (HU-32, glosario en conversación)`
 
 ### 3.6 Flujo de una intervención (`services/intervenciones.py`)
 1. **Transacción corta:** se bloquea la fila de la conversación (`FOR UPDATE`), se exige que esté `activa`, se calcula el siguiente `orden` y se guarda la intervención como `procesando`.
@@ -229,14 +229,14 @@ Solo frontend, sin backend ni tablas. Archivos: `conversacion-sesion.ts`, `.html
 
 **Preferencia:** se guarda en `localStorage` (`traducontext.reproduccionVoz`), común a todas las conversaciones del navegador. La lectura y la escritura van en `try/catch`. Si el almacenamiento no está disponible o el valor no es válido, se usa *Manual*.
 
-### 🟡 HU-32 Glosarios personalizados (parcial, poco trabajo)
-**Ya hay:** CRUD completo de glosarios y términos (back y vista `/glosarios`), términos para conservar sin traducir, control de duplicados y aplicación en traducción de texto y de documentos.
-**Falta:** el criterio 4, aplicarlo **en conversaciones**:
-1. **Migración:** columna `id_glosario` (nullable, FK `ON DELETE SET NULL`) en `conversacion`.
-2. **Schemas y servicio:** aceptarla en `IniciarConversacionSolicitud` y `ActualizarConversacionSolicitud`, y validar con `obtener_glosario_para_traduccion` que el glosario sea del usuario.
-3. **`intervenciones.py`:** añadir `id_glosario` a `_ParametrosTraduccion` y pasarlo a `traducir_con_configuracion` (que ya lo soporta).
-   - Matiz: un glosario tiene un par origen→destino y en la conversación se traduce en ambos sentidos. Lo más simple es aplicarlo solo cuando el sentido de la intervención coincida con el del glosario.
-4. **Frontend:** un select "Glosario" en el panel de configuración, filtrado por el par de idiomas, como ya se hace en `traduccion.ts`.
+### ✅ HU-32 Glosarios personalizados (completa, pendiente de prueba en la app)
+**Ya había:** CRUD de glosarios y términos, términos para conservar, control de duplicados y aplicación en texto y documentos.
+**Criterio 4 (19/11), glosario en conversaciones:**
+- Migración `d6a8c0e2f4b6`: `conversacion.id_glosario` (nullable, FK `ON DELETE SET NULL`; si se borra el glosario la sesión queda sin glosario).
+- `POST` y `PATCH /conversaciones` aceptan `id_glosario` (null lo quita). Se valida que sea del usuario y que su par sea el de la conversación **en cualquier sentido**. La respuesta trae `id_glosario`, `nombre_glosario` y `par_idiomas_glosario` ("ES → EN").
+- `intervenciones.py → _glosario_aplicable`: el glosario se pasa a `traducir_con_configuracion` **solo** si el sentido de la intervención coincide con el del glosario; en el sentido contrario se traduce sin glosario. El reintento usa el glosario actual de la sesión.
+- Frontend: select "Glosario" en la configuración (filtrado por el par en ambos sentidos), editable mientras la sesión no esté finalizada, con aviso del sentido en que se aplica. En `/conversaciones/nueva` parte de la preferencia guardada (HU-33) si corresponde a los idiomas.
+- Pruebas: `tests/test_hu32_glosario_conversacion.py`.
 
 ### ✅ HU-29 Contexto de conversación (implementada en backend, pendiente de prueba en la app)
 **Qué hay:** contexto de dominio, descripción personalizada editable (situación, audiencia, terminología) y entorno, todos aplicados a cada traducción. Desde ahora también se aplica el **contexto acumulado** (historial de la conversación), controlado por el interruptor `mantener_contexto`. No se añadieron tablas ni migraciones.
@@ -265,16 +265,17 @@ Solo frontend, sin backend ni tablas. Archivos: `conversacion-sesion.ts`, `.html
 
 **Pendiente:** probar en la app las pruebas manuales de la sección 8. El texto del ícono de información del interruptor ya se corrigió en el front.
 
-### 🔴 HU-30 Asistencia conversacional (por hacer, trabajo medio con base reutilizable)
-**Ya hay:** el interruptor `asistencia_conversacional` en la base y en la UI, el botón "Asistente" colocado (deshabilitado), y un enriquecedor que ya sabe **explicar expresiones** (`explicar_expresiones`) y **generar alternativas** (`generar_alternativas`) con el LLM.
-**Falta:**
-1. **Backend:** endpoint bajo demanda, p. ej. `POST /conversaciones/{id}/asistencia` con body `{ id_intervencion?, tipo: "explicacion" | "sugerencias" | "como_decir", texto? }`:
-   - Validar que la conversación sea del usuario, que no esté finalizada y que tenga `asistencia_conversacional = true`.
-   - Construir un prompt con el entorno, el contexto, las últimas intervenciones (lo mismo que en HU-29) y la intervención elegida.
-   - Devolver explicaciones, 2 o 3 respuestas sugeridas y una recomendación de cómo expresarlo según el entorno.
-   - Crear un servicio `services/asistencia_conversacional.py` que reutilice el cliente LLM de `enriquecedor_traduccion.py`. No necesita tabla nueva; guardar las respuestas sería opcional.
-2. **Frontend:** habilitar el botón "Asistente" cuando el interruptor esté activo y abrir un panel o modal lateral con estilo distinto al de los mensajes (criterio 5) y tres acciones. Desde cada mensaje se puede ofrecer "Explicar". No debe bloquear el envío de intervenciones (criterio 4).
-3. Añadir `solicitarAsistencia()` en `conversacion.service.ts` y la interfaz en `conversacion.model.ts`.
+### ✅ HU-30 Asistencia conversacional (implementada, pendiente de prueba en la app)
+**Backend:** `POST /conversaciones/{id}/asistencia` con `{ tipo, id_intervencion?, id_participante?, texto? }` (`schemas/asistencia.py`, `services/asistencia_conversacional.py`).
+- `explicacion`: explica a quien escucha una intervención traducida (intención, expresiones y referencias), en su idioma.
+- `sugerencias`: hasta 3 respuestas para quien escucha, en su idioma y con su traducción al otro idioma.
+- `como_decir`: 2 o 3 formas de expresar una idea (`texto`, en cualquier idioma) en el idioma de `id_participante`, según entorno, contexto y tono.
+- Sin `id_intervencion` se usa la última traducida. Requiere sesión del usuario, no finalizada (activa o pausada) y `asistencia_conversacional = true`.
+- Contexto: configuración de la sesión + últimas 5 intervenciones traducidas (`lineas_historial`, la misma función de HU-29; aquí se usa aunque "Mantener contexto" esté apagado). El texto del usuario va en bloques delimitados y neutralizados contra inyección.
+- 1 llamada al LLM por solicitud (timeout 20 s, mismo cliente y modelo `MODELO_LLM` del enriquecedor). Si falla: **503** con mensaje, sin afectar la sesión. No se guarda nada ni se crean tablas.
+
+**Frontend:** botón "Asistente" habilitado si la asistencia está activada y guardada; panel con estilo propio (violeta, borde punteado) y tres pestañas. Cada mensaje traducido tiene botones "Explicar" (bombilla) y "Sugerir respuestas". "Usar" lleva una frase sugerida a la caja de texto con su participante como hablante (no la envía). La solicitud corre en segundo plano y no bloquea el envío de intervenciones.
+- Pruebas: `tests/test_hu30_asistencia.py` (LLM simulado).
 
 ---
 
@@ -287,7 +288,7 @@ Aparecen en el sidebar como enlaces vacíos (`href="javascript:void(0)"`). No fo
 ---
 
 ## 7. Notas y correcciones a la documentación existente
-- `SPRINT3_HU_CRITERIOS.md` dice que la cabeza de migraciones es `c3d8a9e1f2b4` y `SPRINT3_DISENO_CONVERSACION.md` dice `d4f1a2b3c5e6`. **La cabeza real es `f7c9d1e3a5b7`** (intervenciones). Toda migración nueva debe partir de ella.
+- `SPRINT3_HU_CRITERIOS.md` dice que la cabeza de migraciones es `c3d8a9e1f2b4` y `SPRINT3_DISENO_CONVERSACION.md` dice `d4f1a2b3c5e6`. **La cabeza real es `d6a8c0e2f4b6`** (glosario en conversación, 19/11). Toda migración nueva debe partir de ella.
 - La sección 4 ("Brechas") del documento de diseño está superada: las columnas de configuración, la tabla de participantes, la tabla de intervenciones, la función central y la separación lista/pantalla ya existen.
 - Decisiones del equipo ya tomadas en la práctica:
   - Voz a texto con el **navegador**.
@@ -304,8 +305,8 @@ Aparecen en el sidebar como enlaces vacíos (`href="javascript:void(0)"`). No fo
 |---|---|---|---|
 | 1 | HU-28: ~~reproducción automática~~ (hecho); falta probar en la app | Pruebas | S |
 | 2 | HU-29: ~~historial en el prompt y texto del ícono~~ (hecho); falta probar en la app | Pruebas | S |
-| 3 | HU-32: `id_glosario` en la conversación (migración, schemas, servicio y select) | Back + Front | S/M |
-| 4 | HU-30: endpoint de asistencia y panel del asistente | Back + Front | M |
+| 3 | HU-32: ~~`id_glosario` en la conversación~~ (hecho); falta probar en la app | Pruebas | S |
+| 4 | HU-30: ~~endpoint de asistencia y panel del asistente~~ (hecho); falta probar en la app | Pruebas | S |
 
 **Pruebas manuales pendientes de HU-29 (en la app)**
 1. **Ambigüedad, sesión ES↔EN:** P2 escribe "Which file do you want, the red one or the blue one?" y P1 responde "Sí, ese".
@@ -329,4 +330,18 @@ Aparecen en el sidebar como enlaces vacíos (`href="javascript:void(0)"`). No fo
 8. **Mensajes seguidos:** con dos mensajes seguidos, el segundo corta al primero.
 9. **Desplegable:** se cierra al hacer clic fuera y con Escape; "Detener reproducción" solo aparece mientras suena algo.
 
-**Reglas que hay que respetar al implementar:** usuario siempre desde el token, tablas solo con Alembic (partiendo de `f7c9d1e3a5b7`), formato `{mensaje, resultado}`, sin datos mock, convenciones del módulo de glosarios (capas, nombres y errores) y estructura de vistas del sidebar.
+**Pruebas manuales pendientes de HU-32 (en la app)**
+1. Crear un glosario ES→EN con un término (p. ej. "tablero" → "dashboard"), elegirlo en una sesión ES↔EN y escribir como el participante ES: la traducción respeta el término.
+2. Escribir como el participante EN: se traduce sin glosario.
+3. Cambiar o quitar el glosario a mitad de sesión: afecta solo a las intervenciones siguientes.
+4. Eliminar el glosario desde `/glosarios`: la sesión queda "Sin glosario" y sigue traduciendo.
+
+**Pruebas manuales pendientes de HU-30 (en la app)**
+1. Con "Asistencia conversacional" apagada, el botón "Asistente" está deshabilitado; al activarla y guardar, se habilita.
+2. Bombilla de un mensaje: explicación en el idioma de quien escucha. Probar con un modismo ("It's a piece of cake").
+3. "Sugerir respuestas": 3 respuestas en el idioma de quien escucha, con traducción; "Usar" las lleva a la caja de texto y cambia el hablante.
+4. "¿Cómo lo digo?": escribir una idea y comprobar que el registro cambia según el entorno (entrevista frente a informal).
+5. Mientras el asistente consulta, se pueden seguir enviando intervenciones.
+6. Con OpenAI caído, aparece el error en el panel y la sesión sigue funcionando.
+
+**Reglas que hay que respetar al implementar:** usuario siempre desde el token, tablas solo con Alembic (partiendo de `d6a8c0e2f4b6`), formato `{mensaje, resultado}`, sin datos mock, convenciones del módulo de glosarios (capas, nombres y errores) y estructura de vistas del sidebar.

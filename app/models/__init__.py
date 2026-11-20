@@ -8,6 +8,12 @@ from app.models.documento import (
     Documento,
     TraduccionDocumento,
 )
+from app.models.integracion import (
+    ConexionPlataforma,
+    IntervencionExterna,
+    ParticipanteExterno,
+    SesionExterna,
+)
 from app.models.glosario import (
     Glosario,
     TerminoGlosario,
@@ -15,6 +21,7 @@ from app.models.glosario import (
 from app.models.traduccion import (
     ConfiguracionTraduccion,
     Contexto,
+    CorreccionTraduccion,
     Idioma,
     Tono,
     Traduccion,
@@ -39,6 +46,7 @@ __all__ = [
     "Sesion",
     "ConfiguracionTraduccion",
     "Contexto",
+    "CorreccionTraduccion",
     "Idioma",
     "Tono",
     "Traduccion",
@@ -51,4 +59,8 @@ __all__ = [
     "Entorno",
     "Intervencion",
     "ParticipanteConversacion",
+    "ConexionPlataforma",
+    "IntervencionExterna",
+    "ParticipanteExterno",
+    "SesionExterna",
 ]

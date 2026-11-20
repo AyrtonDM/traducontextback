@@ -25,6 +25,10 @@ class IniciarConversacionSolicitud(BaseModel):
     )
     id_entorno: int = Field(..., description="ID del entorno de la conversacion (HU-24)")
     id_tono: int | None = Field(default=None, description="ID del tono (catalogo de HU-15, opcional)")
+    id_glosario: int | None = Field(
+        default=None,
+        description="ID de un glosario del usuario para el par de idiomas de la conversacion (HU-32, opcional)",
+    )
     descripcion_contexto: str | None = Field(
         default=None,
         max_length=LONGITUD_MAXIMA_DESCRIPCION_CONTEXTO,
@@ -48,12 +52,13 @@ class IniciarConversacionSolicitud(BaseModel):
 class ActualizarConversacionSolicitud(BaseModel):
     """
     Configuracion modificable de una sesion no finalizada. Solo se cambian los campos enviados;
-    id_contexto, id_tono y descripcion_contexto admiten null para quitarlos. Los idiomas no cambian.
+    id_contexto, id_tono, id_glosario y descripcion_contexto admiten null para quitarlos. Los idiomas no cambian.
     """
 
     id_entorno: int | None = Field(default=None, description="Nuevo entorno de la conversacion")
     id_contexto: int | None = Field(default=None, description="Nuevo contexto de dominio (null lo quita)")
     id_tono: int | None = Field(default=None, description="Nuevo tono (null lo quita)")
+    id_glosario: int | None = Field(default=None, description="Nuevo glosario (HU-32, null lo quita)")
     descripcion_contexto: str | None = Field(
         default=None,
         max_length=LONGITUD_MAXIMA_DESCRIPCION_CONTEXTO,
@@ -115,6 +120,10 @@ class ConversacionDetalle(BaseModel):
     nombre_entorno: str | None = None
     id_tono: int | None = None
     nombre_tono: str | None = None
+    id_glosario: int | None = None
+    nombre_glosario: str | None = None
+    # Sentido en el que se aplica el glosario, por ejemplo "ES → EN"
+    par_idiomas_glosario: str | None = None
     descripcion_contexto: str | None = None
     mantener_contexto: bool = True
     asistencia_conversacional: bool = False

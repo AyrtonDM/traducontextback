@@ -239,3 +239,40 @@ Criterios de aceptación:
 - Ninguna acción debe cortar ni afectar la llamada en la plataforma externa.
 - El sistema debe mostrar en todo momento el estado del servicio (activo, pausado, finalizado).
 - Al finalizar, la sesión debe quedar registrada en el historial.
+
+## Estado al 19/11/2026
+Cabeza de migraciones: `f9c1e3a5b7d9`. Suite de backend: 173 pruebas en verde (`pytest`).
+
+| HU | Estado | Dónde |
+|---|---|---|
+| HU-05, HU-46, HU-47, HU-48 | ✅ Backend, frontend y pruebas | `administracion/*`, `tests/test_hu05…48` |
+| HU-44 | ✅ Backend, frontend y pruebas | `historial_traducciones.py`, vista Traducción |
+| HU-33 | ✅ Backend, carga automática en texto, documentos y conversaciones, y vista **/preferencias** | `configuracion_traduccion`, `views/aplicacion/preferencias` |
+| HU-34 | ✅ Backend, frontend y pruebas | ver abajo |
+| HU-35 a HU-41 | ✅ Backend, frontend y pruebas (falta probar con apps OAuth reales) | ver abajo |
+
+**HU-34 Aprendizaje de preferencias**
+- Tabla `correccion_traduccion` (texto original, traducción generada, versión corregida, par de idiomas, tipo `correccion | alternativa`) y columna `usuario.aprendizaje_activo` (migración `e7b9d1f3a5c8`).
+- Endpoints `/aprendizaje`: `GET/PATCH` (estado), `POST/GET/DELETE /correcciones` y `DELETE /correcciones/{id}`. Con el aprendizaje desactivado no se registra (responde `resultado: null`) ni se aplica nada; lo aprendido se conserva.
+- Si ya hay una corrección para el mismo texto y par, se reemplaza (vale la última).
+- Al traducir (`/traducciones` e intervenciones de conversación) se envían al LLM hasta 5 correcciones del mismo usuario y par, primero las más parecidas al texto, en un bloque delimitado. Si no hay correcciones el prompt no cambia; si el LLM falla queda la traducción base. La respuesta de `/traducciones` incluye `correcciones_aplicadas`.
+- Frontend: botón lápiz para corregir el resultado en Traducción, registro automático de la alternativa elegida (HU-18), aviso "Se consideraron tus preferencias aprendidas" y gestión (activar/desactivar, filtrar, borrar una o todas) en /preferencias.
+- Pruebas: `tests/test_hu34_aprendizaje.py`.
+
+**HU-35 a HU-41 Google Meet y Zoom** (migración `f9c1e3a5b7d9`; tablas `conexion_plataforma`, `sesion_externa`, `participante_externo`, `intervencion_externa`)
+- Decisión del equipo: la captura se hace en el navegador con el **audio de la pestaña** de la reunión (`getDisplayMedia`) y se transcribe con **Whisper** (`whisper-1`). Las APIs de medios oficiales (Meet Media API, Zoom RTMS) requieren aprobación externa.
+- HU-35 `/integraciones`: estado por plataforma (vinculada, no_vinculada, expirada), permisos mostrados antes de autorizar, OAuth con `state` firmado (Fernet, 10 min), tokens cifrados con `CLAVE_CIFRADO_TOKENS`, renovación con refresh token, revocación al desvincular. El callback es público y redirige a `FRONTEND_URL/integraciones?resultado=vinculada|cancelada|error`.
+- HU-36 `/sesiones-externas`: valida que el enlace sea de la plataforma (Meet `abc-defg-hij`, Zoom ID de 9 a 11 dígitos) y que esté vinculada; parte de las preferencias (HU-33); entorno, contexto, tono, glosario y descripción editables durante la reunión; enlace e idiomas solo antes de iniciar.
+- HU-37 `POST /{id}/audio`: fragmentos de unos 7 s (los silenciosos no se envían), máximo 5 MB, solo con el servicio activo (409 si no), 502 si Whisper falla. Se filtran las "alucinaciones" de Whisper en silencio.
+- HU-38: el idioma se detecta (fastText y, si no, Whisper) y se traduce al otro idioma de la sesión con contexto, tono, entorno, glosario (solo en su sentido), las últimas 5 intervenciones y el aprendizaje (HU-34). Si el idioma no es del par, la intervención queda en error sin detener el servicio; los errores de traducción se pueden reintentar.
+- HU-39: panel de subtítulos (participante, original y traducción), "Ambos textos" o "Solo traducción", tamaño de letra, voz automática o manual y aviso de pausa o de falta de traducciones.
+- HU-40: dos etiquetas genéricas por sesión, agregar y renombrar (solo las genéricas), sincronizar nombres desde la plataforma (Meet REST API / Zoom metrics o past_meetings; si no responde, se avisa y se siguen usando las genéricas), "¿Quién habla ahora?" y corrección del hablante en cada subtítulo. Sin elegir, queda "Sin identificar" (no se inventa la identidad).
+- HU-41: `iniciar | pausar | reanudar | finalizar`; nunca actúan sobre la reunión. Al finalizar queda en el historial (`GET /sesiones-externas?estado=finalizada`).
+- Dashboard y reportes (HU-46/47/48) ahora cuentan las sesiones externas.
+- Pruebas: `tests/test_hu35_41_integraciones.py` (OAuth, APIs, Whisper y LLM simulados).
+
+**Para probarlo de verdad hay que crear las apps OAuth y completar el `.env`** (ver `.env.example`):
+1. Google Cloud Console: crear un proyecto, habilitar **Google Meet REST API**, configurar la pantalla de consentimiento (modo prueba, agregar los correos del equipo como testers) y crear un ID de cliente OAuth "Aplicación web" con URI de redirección `http://localhost:8000/api/v1/integraciones/google_meet/callback`.
+2. Zoom App Marketplace: crear una "General App" (OAuth), URL de redirección `http://localhost:8000/api/v1/integraciones/zoom/callback`, y agregar los permisos `user:read:user`, `meeting:read:meeting` y `meeting:read:list_past_participants`.
+3. Generar `CLAVE_CIFRADO_TOKENS` con `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` (instalar dependencias con `pip install -r requirements.txt`).
+4. Usar Chrome o Edge: al iniciar, elegir la pestaña de la reunión y marcar "Compartir audio de la pestaña" (con la app de escritorio de Zoom: compartir la pantalla completa con el audio del sistema).

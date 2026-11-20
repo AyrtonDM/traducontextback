@@ -341,6 +341,7 @@ def traducir(
             generar_alternativas=efectiva.generar_alternativas,
             explicar_expresiones=efectiva.explicar_expresiones,
             analizar_contexto=contexto_db is not None,
+            aplicar_aprendizaje=True,
         )
     except GlosarioNoEncontradoError as error:
         raise HTTPException(
@@ -416,6 +417,7 @@ def traducir(
             nombre_glosario=glosario_usado.nombre if glosario_usado else None,
             terminos_glosario_aplicados=traduccion.terminos_glosario_aplicados,
             sugerencias=sugerencias,
+            correcciones_aplicadas=traduccion.correcciones_aplicadas,
         ),
     )
 

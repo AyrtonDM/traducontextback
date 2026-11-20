@@ -228,6 +228,7 @@ def traduccion_simulada(monkeypatch):
             # Sin ids de idioma no se guarda en el historial
             id_idioma_origen=None,
             id_idioma_destino=None,
+            correcciones_aplicadas=0,
         )
 
     monkeypatch.setattr("app.api.routes.traducciones.traducir_con_configuracion", falso_traducir)

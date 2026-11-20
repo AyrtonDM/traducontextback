@@ -8,6 +8,7 @@ from app.models.traduccion.idioma import Idioma
 from app.models.traduccion.variante_regional import VarianteRegional
 from app.schemas.glosario import TerminoAplicado
 from app.services.aplicador_glosario import construir_reglas, describir_reglas
+from app.services.aprendizaje import ejemplos_para_traduccion
 from app.services.enriquecedor_traduccion import (
     EnriquecedorTraduccion,
     EnriquecimientoProcesado,
@@ -47,6 +48,8 @@ class TraduccionContextual:
     id_idioma_destino: int | None = None
     # True si la traduccion final es la reescrita segun tono y contexto (adaptar_estilo)
     estilo_aplicado: bool = False
+    # HU-34: correcciones del usuario consideradas en la traduccion final (0 si no se aplicaron)
+    correcciones_aplicadas: int = 0
 
     @property
     def region_aplicada(self) -> bool:
@@ -72,6 +75,7 @@ def traducir_con_configuracion(
     tiempo_maximo_llm: float | None = None,
     nombre_entorno: str | None = None,
     historial_conversacion: list[str] | None = None,
+    aplicar_aprendizaje: bool = False,
 ) -> TraduccionContextual:
     """
     Funcion central de traduccion contextual (HU-15 a HU-18 y glosarios), reutilizable por
@@ -84,6 +88,8 @@ def traducir_con_configuracion(
        `adaptar_estilo`, tono y contexto); si falla, expira (`tiempo_maximo_llm`) o no respeta el
        glosario, se conserva la traduccion base. `historial_conversacion` (HU-29, solo conversaciones)
        llega al modelo como contexto delimitado; /traducciones no lo envia.
+    5. `aplicar_aprendizaje` (HU-34): si el usuario tiene el aprendizaje activo, sus correcciones del
+       mismo par de idiomas se envian al modelo como ejemplos. Si no hay o el modelo falla, no cambia nada.
 
     Las consultas a la base de datos se hacen solo cuando hacen falta (glosario, o idioma de destino
     si hay variante) y el resto al final, para no dejar una transaccion abierta mientras se traduce.
@@ -144,6 +150,20 @@ def traducir_con_configuracion(
         estado_region = ESTADO_REGION_INCOMPATIBLE
     region_valida = estado_region == ESTADO_REGION_APLICADA
 
+    # HU-34: correcciones del usuario en este par de idiomas (nunca impiden traducir)
+    ejemplos_usuario: list[str] = []
+    if aplicar_aprendizaje:
+        try:
+            ejemplos_usuario = ejemplos_para_traduccion(
+                sesion=sesion,
+                id_usuario=id_usuario,
+                codigo_idioma_origen=resultado["idioma_origen"],
+                codigo_idioma_destino=resultado["idioma_destino"],
+                texto=resultado["texto_origen"],
+            )
+        except Exception:  # noqa: BLE001
+            ejemplos_usuario = []
+
     # 4. Enriquecer: adaptacion regional, alternativas y explicacion de modismos segun configuracion
     enriquecimiento = enriquecedor_traduccion.enriquecer(
         texto_origen=resultado["texto_origen"],
@@ -163,6 +183,7 @@ def traducir_con_configuracion(
         tiempo_maximo=tiempo_maximo_llm,
         nombre_entorno=nombre_entorno,
         historial_conversacion=historial_conversacion,
+        ejemplos_usuario=ejemplos_usuario,
     )
 
     traduccion_final = resultado["traduccion"]
@@ -170,15 +191,18 @@ def traducir_con_configuracion(
         enriquecimiento.resultado.traduccion_adaptada and not enriquecimiento.adaptacion_fallida
     )
     estilo_aplicado = False
+    adaptada_usada = False
     if region_valida:
         if adaptacion_valida:
             traduccion_final = enriquecimiento.resultado.traduccion_adaptada
+            adaptada_usada = True
         else:
             # Si el modelo fallo, expiro o no respeto el glosario, se conserva la traduccion base (NLLB)
             estado_region = ESTADO_REGION_ERROR_ADAPTACION
-    elif adaptar_estilo and adaptacion_valida:
+    elif (adaptar_estilo or ejemplos_usuario) and adaptacion_valida:
         traduccion_final = enriquecimiento.resultado.traduccion_adaptada
-        estilo_aplicado = True
+        adaptada_usada = True
+        estilo_aplicado = adaptar_estilo
 
     idioma_orig_db = buscar_idioma(resultado["idioma_origen"])
     if idioma_dest_db is None:
@@ -199,4 +223,5 @@ def traducir_con_configuracion(
         id_idioma_origen=idioma_orig_db.id_idioma if idioma_orig_db else None,
         id_idioma_destino=idioma_dest_db.id_idioma if idioma_dest_db else None,
         estilo_aplicado=estilo_aplicado,
+        correcciones_aplicadas=len(ejemplos_usuario) if adaptada_usada else 0,
     )

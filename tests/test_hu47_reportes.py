@@ -49,7 +49,7 @@ def test_reporte_sin_filtros_muestra_detalle_y_totales(cliente_admin, datos):
         "documento": 2,
         "conversacion": 1,
         "sesion_externa": 0,
-        "sesion_externa_disponible": False,
+        "sesion_externa_disponible": True,
     }
     assert len(r["actividades"]) == 6
     # Ordenado de lo mas reciente a lo mas antiguo

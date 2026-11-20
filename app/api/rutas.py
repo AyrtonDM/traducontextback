@@ -18,6 +18,9 @@ from app.api.routes.reportes import enrutador as enrutador_reportes
 from app.api.routes.entornos import enrutador as enrutador_entornos
 from app.api.routes.conversaciones import enrutador as enrutador_conversaciones
 from app.api.routes.intervenciones import enrutador as enrutador_intervenciones
+from app.api.routes.aprendizaje import enrutador as enrutador_aprendizaje
+from app.api.routes.integraciones import enrutador as enrutador_integraciones
+from app.api.routes.sesiones_externas import enrutador as enrutador_sesiones_externas
 
 enrutador = APIRouter()
 enrutador.include_router(enrutador_usuarios)
@@ -36,3 +39,6 @@ enrutador.include_router(enrutador_conversaciones)
 enrutador.include_router(enrutador_intervenciones)
 enrutador.include_router(enrutador_dashboard)
 enrutador.include_router(enrutador_reportes)
+enrutador.include_router(enrutador_aprendizaje)
+enrutador.include_router(enrutador_integraciones)
+enrutador.include_router(enrutador_sesiones_externas)

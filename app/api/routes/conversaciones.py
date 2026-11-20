@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.seguridad import requiere_token
 from app.database.conexion import obtener_sesion
 from app.models.usuario.usuario import Usuario
+from app.schemas.asistencia import RespuestaAsistencia, SolicitudAsistencia
 from app.schemas.conversacion import (
     ActualizarConversacionSolicitud,
     ActualizarParticipanteSolicitud,
@@ -13,6 +14,10 @@ from app.schemas.conversacion import (
     ListaParticipantesRespuesta,
     RespuestaConversacion,
     RespuestaParticipante,
+)
+from app.services.asistencia_conversacional import (
+    AsistenciaNoDisponibleError,
+    solicitar_asistencia,
 )
 from app.services.conversaciones import (
     ConversacionNoEncontradaError,
@@ -72,7 +77,9 @@ def _error_http(error: ValueError) -> HTTPException:
     responses={
         **RESPUESTAS_COMUNES,
         status.HTTP_400_BAD_REQUEST: {
-            "description": "Idioma, contexto o entorno inexistente o inactivo."
+            "description": (
+                "Idioma, contexto o entorno inexistente o inactivo, o glosario ajeno o de otro par de idiomas."
+            )
         },
     },
 )
@@ -155,14 +162,18 @@ def consultar_conversacion(
     status_code=status.HTTP_200_OK,
     summary="Modificar la configuracion de una conversacion (requiere token)",
     description=(
-        "Cambia entorno, contexto, tono, descripcion del contexto y opciones mientras la "
-        "conversacion no este finalizada. Solo se modifican los campos enviados; los idiomas no cambian."
+        "Cambia entorno, contexto, tono, glosario, descripcion del contexto y opciones mientras la "
+        "conversacion no este finalizada. Solo se modifican los campos enviados; los idiomas no cambian. "
+        "El glosario debe ser del usuario y del mismo par de idiomas (en cualquier sentido)."
     ),
     responses={
         **RESPUESTAS_COMUNES,
         **RESPUESTA_404,
         status.HTTP_400_BAD_REQUEST: {
-            "description": "Conversacion finalizada o entorno, contexto o tono inexistente o inactivo."
+            "description": (
+                "Conversacion finalizada, entorno, contexto o tono inexistente o inactivo, o glosario "
+                "ajeno o de otro par de idiomas."
+            )
         },
     },
 )
@@ -327,4 +338,62 @@ def modificar_participante(
     return RespuestaParticipante(
         mensaje="Participante actualizado correctamente.",
         resultado=armar_detalle_participante(participante),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Asistencia conversacional (HU-30)
+# ---------------------------------------------------------------------------
+
+
+@enrutador.post(
+    "/{id_conversacion}/asistencia",
+    response_model=RespuestaAsistencia,
+    status_code=status.HTTP_200_OK,
+    summary="Pedir asistencia conversacional (requiere token)",
+    description=(
+        "Asistencia bajo demanda con la asistencia activada y la conversacion no finalizada. "
+        "'explicacion': explica una intervencion (expresiones, referencias e intencion). "
+        "'sugerencias': propone respuestas a una intervencion para quien la escucha. "
+        "'como_decir': recomienda como expresar la idea de 'texto' en el idioma de 'id_participante' "
+        "segun el entorno. Sin 'id_intervencion' se usa la ultima intervencion traducida. "
+        "No modifica la conversacion ni bloquea el envio de intervenciones."
+    ),
+    responses={
+        **RESPUESTAS_COMUNES,
+        status.HTTP_404_NOT_FOUND: {
+            "description": "La conversacion, la intervencion o el participante no existen o no son del usuario."
+        },
+        status.HTTP_400_BAD_REQUEST: {
+            "description": (
+                "Conversacion finalizada, asistencia desactivada, intervencion sin traducir o "
+                "sin intervenciones traducidas."
+            )
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": "El modelo de lenguaje no respondio; se puede volver a intentar."
+        },
+    },
+)
+def pedir_asistencia(
+    id_conversacion: int,
+    datos: SolicitudAsistencia,
+    usuario: Usuario = Depends(requiere_token),
+    sesion: Session = Depends(obtener_sesion),
+) -> RespuestaAsistencia:
+    try:
+        resultado = solicitar_asistencia(
+            sesion=sesion,
+            id_usuario=usuario.id,
+            id_conversacion=id_conversacion,
+            datos=datos,
+        )
+    except AsistenciaNoDisponibleError as error:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
+    except ValueError as error:
+        raise _error_http(error) from error
+
+    return RespuestaAsistencia(
+        mensaje="Asistencia generada correctamente.",
+        resultado=resultado,
     )

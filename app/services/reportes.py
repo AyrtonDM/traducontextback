@@ -1,8 +1,8 @@
 """
 Reportes administrativos de actividad (HU-47).
 
-Une en una sola consulta la actividad de los servicios (traducciones de texto, documentos y
-conversaciones) con columnas comunes, para filtrar, totalizar y paginar de forma uniforme.
+Une en una sola consulta la actividad de los servicios (traducciones de texto, documentos,
+conversaciones y sesiones externas de Meet/Zoom) con columnas comunes, para filtrar, totalizar y paginar de forma uniforme.
 La misma funcion sirve para la exportacion (HU-48) pidiendo todas las filas sin paginar.
 
 El detalle no incluye el contenido traducido por los usuarios: solo metadatos de la actividad.
@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, aliased
 from app.models.conversacion.conversacion import Conversacion
 from app.models.conversacion.entorno import Entorno
 from app.models.documento.traduccion_documento import TraduccionDocumento
+from app.models.integracion.sesion_externa import SesionExterna
 from app.models.traduccion.configuracion_traduccion import ConfiguracionTraduccion
 from app.models.traduccion.contexto import Contexto
 from app.models.traduccion.idioma import Idioma
@@ -102,11 +103,30 @@ def _consulta_conversaciones():
     ).outerjoin(Entorno, Entorno.id_entorno == Conversacion.id_entorno)
 
 
+def _consulta_sesiones_externas():
+    # Detalle: plataforma y referencia de la reunion (sin contenido de lo hablado)
+    return select(
+        literal("sesion_externa").label("tipo_servicio"),
+        SesionExterna.id_sesion_externa.label("id_registro"),
+        SesionExterna.fecha_creacion.label("fecha"),
+        SesionExterna.id_usuario.label("id_usuario"),
+        SesionExterna.id_idioma_origen.label("id_idioma_origen"),
+        SesionExterna.id_idioma_destino.label("id_idioma_destino"),
+        SesionExterna.id_contexto.label("id_contexto"),
+        SesionExterna.estado.label("estado"),
+        func.concat(
+            func.replace(func.replace(SesionExterna.plataforma, "google_meet", "Google Meet"), "zoom", "Zoom"),
+            " · ",
+            SesionExterna.referencia_reunion,
+        ).label("detalle"),
+    )
+
+
 CONSULTAS_POR_TIPO = {
     "texto": _consulta_texto,
     "documento": _consulta_documentos,
     "conversacion": _consulta_conversaciones,
-    # "sesion_externa": se agregara con la integracion de Meet y Zoom (HU-35 a HU-41)
+    "sesion_externa": _consulta_sesiones_externas,
 }
 
 
@@ -194,8 +214,8 @@ def _totales(sesion: Session, actividad) -> TotalesReporte:
         texto=conteo.get("texto", 0),
         documento=conteo.get("documento", 0),
         conversacion=conteo.get("conversacion", 0),
-        sesion_externa=0,
-        sesion_externa_disponible=False,
+        sesion_externa=conteo.get("sesion_externa", 0),
+        sesion_externa_disponible=True,
     )
 
 

@@ -138,6 +138,8 @@ class TraduccionResultado(BaseModel):
     terminos_glosario_aplicados: list[TerminoAplicado] = Field(default_factory=list)
     # Reutilizacion de traducciones (HU-44): maximo 3, de mayor a menor similitud
     sugerencias: list[SugerenciaTraduccion] = Field(default_factory=list)
+    # Aprendizaje de preferencias (HU-34): correcciones del usuario consideradas en esta traduccion
+    correcciones_aplicadas: int = 0
 
 
 class RespuestaTraduccion(BaseModel):

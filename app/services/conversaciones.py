@@ -9,6 +9,7 @@ from app.models.conversacion.conversacion import (
     ESTADO_PAUSADA,
     Conversacion,
 )
+from app.models.glosario.glosario import Glosario
 from app.models.conversacion.participante import (
     ORDEN_PARTICIPANTE_DESTINO,
     ORDEN_PARTICIPANTE_ORIGEN,
@@ -24,6 +25,7 @@ from app.schemas.conversacion import (
     ParticipanteDetalle,
 )
 from app.services.entornos import obtener_entorno_activo
+from app.services.glosarios import obtener_glosario_usuario
 
 
 class ConversacionNoEncontradaError(ValueError):
@@ -74,6 +76,32 @@ def _validar_tono(sesion: Session, id_tono: int) -> Tono:
     return tono
 
 
+def _validar_glosario(
+    sesion: Session,
+    id_usuario: int,
+    id_glosario: int,
+    id_idioma_1: int,
+    id_idioma_2: int,
+) -> Glosario:
+    """
+    HU-32: el glosario debe ser del usuario y su par de idiomas debe ser el de la conversacion, en
+    cualquier sentido (la conversacion es bidireccional; se aplica solo en el sentido del glosario).
+    """
+    glosario = obtener_glosario_usuario(sesion, id_usuario, id_glosario)
+    if {glosario.id_idioma_origen, glosario.id_idioma_destino} != {id_idioma_1, id_idioma_2}:
+        raise ValueError(
+            f"El glosario '{glosario.nombre}' no corresponde a los idiomas de la conversacion. "
+            "Seleccione un glosario del mismo par de idiomas."
+        )
+    return glosario
+
+
+def _par_idiomas_glosario(glosario: Glosario | None) -> str | None:
+    if not glosario or not glosario.idioma_origen or not glosario.idioma_destino:
+        return None
+    return f"{glosario.idioma_origen.codigo.upper()} → {glosario.idioma_destino.codigo.upper()}"
+
+
 def _consulta_conversaciones():
     return select(Conversacion).options(
         selectinload(Conversacion.idioma_origen),
@@ -81,6 +109,8 @@ def _consulta_conversaciones():
         selectinload(Conversacion.contexto),
         selectinload(Conversacion.entorno),
         selectinload(Conversacion.tono),
+        selectinload(Conversacion.glosario).selectinload(Glosario.idioma_origen),
+        selectinload(Conversacion.glosario).selectinload(Glosario.idioma_destino),
         selectinload(Conversacion.participantes).selectinload(ParticipanteConversacion.idioma),
     )
 
@@ -114,6 +144,9 @@ def armar_detalle_conversacion(conversacion: Conversacion) -> ConversacionDetall
         nombre_entorno=conversacion.entorno.nombre if conversacion.entorno else None,
         id_tono=conversacion.id_tono,
         nombre_tono=conversacion.tono.nombre if conversacion.tono else None,
+        id_glosario=conversacion.id_glosario,
+        nombre_glosario=conversacion.glosario.nombre if conversacion.glosario else None,
+        par_idiomas_glosario=_par_idiomas_glosario(conversacion.glosario),
         descripcion_contexto=conversacion.descripcion_contexto,
         mantener_contexto=conversacion.mantener_contexto,
         asistencia_conversacional=conversacion.asistencia_conversacional,
@@ -198,6 +231,10 @@ def iniciar_conversacion(
     obtener_entorno_activo(sesion, datos.id_entorno)
     if datos.id_tono is not None:
         _validar_tono(sesion, datos.id_tono)
+    if datos.id_glosario is not None:
+        _validar_glosario(
+            sesion, id_usuario, datos.id_glosario, datos.id_idioma_origen, datos.id_idioma_destino
+        )
 
     conversacion = Conversacion(
         estado=ESTADO_ACTIVA,
@@ -207,6 +244,7 @@ def iniciar_conversacion(
         id_contexto=datos.id_contexto,
         id_entorno=datos.id_entorno,
         id_tono=datos.id_tono,
+        id_glosario=datos.id_glosario,
         descripcion_contexto=datos.descripcion_contexto,
         mantener_contexto=datos.mantener_contexto,
         asistencia_conversacional=datos.asistencia_conversacional,
@@ -236,7 +274,7 @@ def actualizar_conversacion(
     datos: ActualizarConversacionSolicitud,
 ) -> Conversacion:
     """
-    Modifica la configuracion (entorno, contexto, tono, descripcion e interruptores)
+    Modifica la configuracion (entorno, contexto, tono, glosario, descripcion e interruptores)
     mientras la conversacion no este finalizada. Solo cambia los campos enviados.
     Los idiomas no se modifican.
     """
@@ -259,6 +297,17 @@ def actualizar_conversacion(
         if datos.id_tono is not None:
             _validar_tono(sesion, datos.id_tono)
         conversacion.id_tono = datos.id_tono
+
+    if "id_glosario" in campos:
+        if datos.id_glosario is not None:
+            _validar_glosario(
+                sesion,
+                id_usuario,
+                datos.id_glosario,
+                conversacion.id_idioma_origen,
+                conversacion.id_idioma_destino,
+            )
+        conversacion.id_glosario = datos.id_glosario
 
     if "descripcion_contexto" in campos:
         conversacion.descripcion_contexto = datos.descripcion_contexto

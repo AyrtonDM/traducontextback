@@ -53,7 +53,7 @@ def test_indicadores_con_datos_reales(cliente_admin, datos):
         "documentos_traducidos": 1,  # el documento con error no cuenta
         "conversaciones": 1,
         "sesiones_externas": 0,
-        "sesiones_externas_disponible": False,
+        "sesiones_externas_disponible": True,
     }
 
 

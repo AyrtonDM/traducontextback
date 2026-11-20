@@ -75,6 +75,12 @@ class Conversacion(Base):
         ForeignKey("tono.id_tono", ondelete="SET NULL"),
         nullable=True,
     )
+    # HU-32: glosario del usuario; se aplica a las intervenciones en el mismo sentido que su par de idiomas.
+    # Si se elimina el glosario, la conversacion queda sin glosario.
+    id_glosario: Mapped[int | None] = mapped_column(
+        ForeignKey("glosario.id_glosario", ondelete="SET NULL"),
+        nullable=True,
+    )
     # Descripcion personalizada del contexto: situacion, audiencia o terminologia (HU-29)
     descripcion_contexto: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Preferencias guardadas en la sesion; su efecto llega con HU-29 (contexto acumulado) y HU-30
@@ -97,6 +103,7 @@ class Conversacion(Base):
     contexto = relationship("Contexto")
     entorno = relationship("Entorno", back_populates="conversaciones")
     tono = relationship("Tono")
+    glosario = relationship("Glosario")
     participantes = relationship(
         "ParticipanteConversacion",
         back_populates="conversacion",

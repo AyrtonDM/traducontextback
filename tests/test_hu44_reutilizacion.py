@@ -77,6 +77,7 @@ def traduccion_simulada(monkeypatch, idiomas):
             analisis_contextual=None,
             id_idioma_origen=idiomas["es"].id_idioma,
             id_idioma_destino=idiomas[kwargs["idioma_destino"]].id_idioma,
+            correcciones_aplicadas=0,
         )
 
     monkeypatch.setattr("app.api.routes.traducciones.traducir_con_configuracion", falso_traducir)

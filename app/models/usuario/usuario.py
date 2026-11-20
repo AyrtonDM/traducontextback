@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, String, func, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -41,6 +41,13 @@ class Usuario(Base):
     # Ruta relativa (desde la raiz del backend) de la foto en documentos/fotos_perfil
     foto_perfil: Mapped[str | None] = mapped_column(String(500), nullable=True)
     id_rol: Mapped[int] = mapped_column(ForeignKey("rol.id"), nullable=False)
+    # HU-34: si esta activo, se registran y se aplican sus correcciones en las siguientes traducciones
+    aprendizaje_activo: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=true(),
+        nullable=False,
+    )
 
     rol = relationship("Rol", back_populates="usuarios")
     codigos_verificacion = relationship(
@@ -83,6 +90,24 @@ class Usuario(Base):
     )
     conversaciones = relationship(
         "Conversacion",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    correcciones_traduccion = relationship(
+        "CorreccionTraduccion",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    conexiones_plataforma = relationship(
+        "ConexionPlataforma",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    sesiones_externas = relationship(
+        "SesionExterna",
         back_populates="usuario",
         cascade="all, delete-orphan",
         passive_deletes=True,

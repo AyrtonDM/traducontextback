@@ -65,6 +65,8 @@ class _ParametrosTraduccion:
     nombre_tono: str | None
     adaptar_estilo: bool
     nombre_entorno: str | None = None
+    # HU-32: solo si el sentido de la intervencion coincide con el par del glosario de la sesion
+    id_glosario: int | None = None
     # HU-29: None si 'mantener_contexto' esta apagado; lista vacia si no hay intervenciones previas
     historial_conversacion: list[str] | None = None
 
@@ -127,28 +129,24 @@ def _linea_historial(intervencion: Intervencion) -> str:
     return linea
 
 
-def _leer_historial(
+def lineas_historial(
     sesion: Session,
-    conversacion: Conversacion,
-    orden_actual: int,
-) -> list[str] | None:
+    id_conversacion: int,
+    antes_de_orden: int | None = None,
+) -> list[str]:
     """
-    HU-29: ultimas intervenciones 'traducidas' de ESTA conversacion anteriores a `orden_actual`, en
-    orden ascendente. Recorta las mas antiguas hasta quedar dentro del tope total de caracteres.
-    Devuelve None si 'mantener_contexto' esta apagado (no se consulta la base de datos).
+    Ultimas intervenciones 'traducidas' de ESTA conversacion (anteriores a `antes_de_orden` si se
+    indica), en orden ascendente y con el formato del historial. Recorta las mas antiguas hasta
+    quedar dentro del tope total de caracteres. La usan HU-29 (traduccion) y HU-30 (asistencia).
     """
-    if not conversacion.mantener_contexto:
-        return None
-
+    consulta = _consulta_intervenciones().where(
+        Intervencion.id_conversacion == id_conversacion,
+        Intervencion.estado == ESTADO_TRADUCIDA,
+    )
+    if antes_de_orden is not None:
+        consulta = consulta.where(Intervencion.orden < antes_de_orden)
     previas = sesion.scalars(
-        _consulta_intervenciones()
-        .where(
-            Intervencion.id_conversacion == conversacion.id_conversacion,
-            Intervencion.estado == ESTADO_TRADUCIDA,
-            Intervencion.orden < orden_actual,
-        )
-        .order_by(Intervencion.orden.desc())
-        .limit(MAX_INTERVENCIONES_HISTORIAL)
+        consulta.order_by(Intervencion.orden.desc()).limit(MAX_INTERVENCIONES_HISTORIAL)
     ).all()
     lineas = [_linea_historial(intervencion) for intervencion in reversed(previas)]
 
@@ -156,6 +154,20 @@ def _leer_historial(
     while lineas and _caracteres_historial(lineas) > MAX_CARACTERES_HISTORIAL:
         lineas.pop(0)
     return lineas
+
+
+def _leer_historial(
+    sesion: Session,
+    conversacion: Conversacion,
+    orden_actual: int,
+) -> list[str] | None:
+    """
+    HU-29: historial anterior a `orden_actual` (nunca incluye la intervencion actual).
+    Devuelve None si 'mantener_contexto' esta apagado (no se consulta la base de datos).
+    """
+    if not conversacion.mantener_contexto:
+        return None
+    return lineas_historial(sesion, conversacion.id_conversacion, antes_de_orden=orden_actual)
 
 
 def _caracteres_historial(lineas: list[str]) -> int:
@@ -174,6 +186,25 @@ def _registrar_uso_historial(id_intervencion: int, historial: list[str] | None) 
             len(historial),
             _caracteres_historial(historial),
         )
+
+
+def _glosario_aplicable(
+    conversacion: Conversacion,
+    codigo_idioma_origen: str,
+    codigo_idioma_destino: str,
+) -> int | None:
+    """
+    HU-32: un glosario tiene un sentido (origen -> destino) y la conversacion traduce en ambos.
+    Solo se aplica a las intervenciones de ese mismo sentido; en el otro se traduce sin glosario.
+    """
+    glosario = conversacion.glosario
+    if not glosario or not glosario.idioma_origen or not glosario.idioma_destino:
+        return None
+    mismo_sentido = (
+        glosario.idioma_origen.codigo.lower() == codigo_idioma_origen.lower()
+        and glosario.idioma_destino.codigo.lower() == codigo_idioma_destino.lower()
+    )
+    return glosario.id_glosario if mismo_sentido else None
 
 
 def _parametros_traduccion(
@@ -210,6 +241,7 @@ def _parametros_traduccion(
         nombre_tono=nombre_tono,
         adaptar_estilo=adaptar_estilo,
         nombre_entorno=conversacion.entorno.nombre if conversacion.entorno else None,
+        id_glosario=_glosario_aplicable(conversacion, codigo_idioma_origen, codigo_idioma_destino),
         historial_conversacion=historial,
     )
 
@@ -266,7 +298,9 @@ def _traducir_y_guardar(sesion: Session, parametros: _ParametrosTraduccion) -> I
             adaptar_estilo=parametros.adaptar_estilo,
             tiempo_maximo_llm=TIEMPO_MAXIMO_LLM_CONVERSACION_SEGUNDOS,
             nombre_entorno=parametros.nombre_entorno,
+            id_glosario=parametros.id_glosario,
             historial_conversacion=parametros.historial_conversacion,
+            aplicar_aprendizaje=True,
         )
         texto_traducido = traduccion.traduccion
         if parametros.adaptar_estilo and not traduccion.estilo_aplicado:
@@ -435,7 +469,7 @@ def reintentar_intervencion(
 ) -> Intervencion:
     """
     Vuelve a traducir una intervencion en 'error', o en 'procesando' si quedo interrumpida.
-    Usa la configuracion actual de la sesion, que debe estar activa.
+    Usa la configuracion actual de la sesion (incluido el glosario), que debe estar activa.
     """
     conversacion = exigir_conversacion_activa(sesion, id_usuario, id_conversacion)
 
