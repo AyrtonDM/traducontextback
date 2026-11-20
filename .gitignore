@@ -6,3 +6,12 @@ __pycache__/
 .coverage
 .vscode/
 .idea/
+documentos/
+
+# Credenciales (Firebase y similares): nunca se versionan
+credenciales/
+*firebase-adminsdk*.json
+*service-account*.json
+
+# Herramientas Node de documentación (SW1)
+docs/herramientas/node_modules/

@@ -21,12 +21,34 @@ class Configuracion(BaseSettings):
     db_password: str
     db_echo: bool
 
-    api_key_resend: str
-    correo_remitente: str
+    gmail_host: str
+    gmail_port: int
+    gmail_usuario: str
+    gmail_password: str
+    gmail_remitente: str
+    openai_api_key: str
+
+    # Integraciones con Google Meet y Zoom (HU-35 a HU-41). Todas son opcionales: sin ellas la
+    # plataforma correspondiente se muestra como "no configurada" y no se puede vincular.
+    # Clave Fernet (base64 de 32 bytes) para cifrar los tokens OAuth guardados en la base de datos.
+    # Generarla con: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    clave_cifrado_tokens: str = ""
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = ""
+    zoom_client_id: str = ""
+    zoom_client_secret: str = ""
+    zoom_redirect_uri: str = ""
+    # A donde vuelve el navegador al terminar la autorizacion OAuth
+    frontend_url: str = "http://localhost:4200"
+
+    # Notificaciones push (M1), opcional. Cuenta de servicio de Firebase: ruta al archivo JSON
+    # o el JSON completo en una sola linea. Vacia = las notificaciones solo se guardan en BD.
+    firebase_credenciales: str = ""
 
     model_config = SettingsConfigDict(
         env_file=RUTA_BASE / ".env",
-        env_file_encoding="utf-8",
+        env_file_encoding="utf-8-sig",
         case_sensitive=False,
         extra="ignore",
     )
