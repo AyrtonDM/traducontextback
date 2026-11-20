@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,12 +11,33 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.rutas import enrutador
 from app.core.configuracion import RUTA_BASE, configuracion
+from app.database.conexion import FabricaSesiones
 from app.database.inicializacion import inicializar_base_datos
+from app.services.chats import marcar_pendientes_como_error
+
+
+logger = logging.getLogger(__name__)
+
+
+def _recuperar_chats_interrumpidos() -> None:
+    """Los mensajes de chat que quedaron 'pendiente' en un reinicio pasan a 'error'."""
+    try:
+        with FabricaSesiones() as sesion:
+            mensajes, traducciones = marcar_pendientes_como_error(sesion)
+        if mensajes or traducciones:
+            logger.warning(
+                "Chats: %s mensajes y %s traducciones pendientes pasaron a error tras el reinicio.",
+                mensajes,
+                traducciones,
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception("No se pudieron recuperar los mensajes de chat pendientes.")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     inicializar_base_datos()
+    _recuperar_chats_interrumpidos()
     yield
 
 

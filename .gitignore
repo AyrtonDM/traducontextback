@@ -12,3 +12,6 @@ documentos/
 credenciales/
 *firebase-adminsdk*.json
 *service-account*.json
+
+# Herramientas Node de documentación (SW1)
+docs/herramientas/node_modules/

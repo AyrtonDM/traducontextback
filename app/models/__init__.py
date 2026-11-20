@@ -1,3 +1,9 @@
+from app.models.chat import (
+    Chat,
+    MensajeChat,
+    ParticipanteChat,
+    TraduccionMensajeChat,
+)
 from app.models.conversacion import (
     Conversacion,
     Entorno,
@@ -69,4 +75,8 @@ __all__ = [
     "SesionExterna",
     "DispositivoPush",
     "Notificacion",
+    "Chat",
+    "ParticipanteChat",
+    "MensajeChat",
+    "TraduccionMensajeChat",
 ]

@@ -10,7 +10,9 @@ from app.database.base import Base
 TIPO_DOCUMENTO_LISTO = "DOCUMENTO_LISTO"
 TIPO_DOCUMENTO_ERROR = "DOCUMENTO_ERROR"
 TIPO_SISTEMA = "SISTEMA"
-TIPOS_NOTIFICACION = (TIPO_DOCUMENTO_LISTO, TIPO_DOCUMENTO_ERROR, TIPO_SISTEMA)
+# Chats entre usuarios: una entrada por chat en la bandeja (se actualiza con cada mensaje)
+TIPO_MENSAJE_CHAT = "MENSAJE_CHAT"
+TIPOS_NOTIFICACION = (TIPO_DOCUMENTO_LISTO, TIPO_DOCUMENTO_ERROR, TIPO_SISTEMA, TIPO_MENSAJE_CHAT)
 
 
 class Notificacion(Base):
@@ -23,7 +25,7 @@ class Notificacion(Base):
     __tablename__ = "notificacion"
     __table_args__ = (
         CheckConstraint(
-            "tipo IN ('DOCUMENTO_LISTO', 'DOCUMENTO_ERROR', 'SISTEMA')",
+            "tipo IN ('DOCUMENTO_LISTO', 'DOCUMENTO_ERROR', 'SISTEMA', 'MENSAJE_CHAT')",
             name="ck_notificacion_tipo",
         ),
         Index("ix_notificacion_usuario_leida_fecha", "id_usuario", "leida", "fecha_creacion"),
