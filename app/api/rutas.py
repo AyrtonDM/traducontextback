@@ -21,6 +21,8 @@ from app.api.routes.intervenciones import enrutador as enrutador_intervenciones
 from app.api.routes.aprendizaje import enrutador as enrutador_aprendizaje
 from app.api.routes.integraciones import enrutador as enrutador_integraciones
 from app.api.routes.sesiones_externas import enrutador as enrutador_sesiones_externas
+from app.api.routes.dispositivos import enrutador as enrutador_dispositivos
+from app.api.routes.notificaciones import enrutador as enrutador_notificaciones
 
 enrutador = APIRouter()
 enrutador.include_router(enrutador_usuarios)
@@ -42,3 +44,5 @@ enrutador.include_router(enrutador_reportes)
 enrutador.include_router(enrutador_aprendizaje)
 enrutador.include_router(enrutador_integraciones)
 enrutador.include_router(enrutador_sesiones_externas)
+enrutador.include_router(enrutador_dispositivos)
+enrutador.include_router(enrutador_notificaciones)

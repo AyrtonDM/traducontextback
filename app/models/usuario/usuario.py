@@ -112,3 +112,16 @@ class Usuario(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    # M1 notificaciones: dispositivos para push (FCM) y bandeja de notificaciones
+    dispositivos_push = relationship(
+        "DispositivoPush",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    notificaciones = relationship(
+        "Notificacion",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )

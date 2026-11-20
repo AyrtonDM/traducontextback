@@ -42,6 +42,10 @@ class Configuracion(BaseSettings):
     # A donde vuelve el navegador al terminar la autorizacion OAuth
     frontend_url: str = "http://localhost:4200"
 
+    # Notificaciones push (M1), opcional. Cuenta de servicio de Firebase: ruta al archivo JSON
+    # o el JSON completo en una sola linea. Vacia = las notificaciones solo se guardan en BD.
+    firebase_credenciales: str = ""
+
     model_config = SettingsConfigDict(
         env_file=RUTA_BASE / ".env",
         env_file_encoding="utf-8-sig",

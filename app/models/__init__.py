@@ -18,6 +18,10 @@ from app.models.glosario import (
     Glosario,
     TerminoGlosario,
 )
+from app.models.notificacion import (
+    DispositivoPush,
+    Notificacion,
+)
 from app.models.traduccion import (
     ConfiguracionTraduccion,
     Contexto,
@@ -63,4 +67,6 @@ __all__ = [
     "IntervencionExterna",
     "ParticipanteExterno",
     "SesionExterna",
+    "DispositivoPush",
+    "Notificacion",
 ]
