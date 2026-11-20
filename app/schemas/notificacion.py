@@ -16,7 +16,9 @@ class RegistrarDispositivoSolicitud(BaseModel):
         max_length=512,
         description="Token de registro de Firebase Cloud Messaging del dispositivo",
     )
-    plataforma: Literal["android", "ios"] = Field(..., description="Sistema operativo del dispositivo")
+    plataforma: Literal["android", "ios", "web"] = Field(
+        ..., description="Plataforma del dispositivo: android, ios o web (navegador)"
+    )
 
     @field_validator("token_fcm")
     @classmethod

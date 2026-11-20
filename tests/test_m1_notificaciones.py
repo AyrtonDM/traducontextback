@@ -113,6 +113,37 @@ def test_registrar_valida_plataforma_y_token(cliente):
     assert registrar(cliente, token="   ").status_code == 422
 
 
+@pytest.fixture()
+def restriccion_plataforma_con_web(sesion):
+    """
+    Si la base aun no tiene la migracion c5e7a9b1d3f5, recrea la restriccion como la deja esa
+    migracion, dentro de la transaccion de la prueba (el DDL de PostgreSQL se revierte al terminar).
+    """
+    conexion = sesion.connection()
+    definicion = conexion.exec_driver_sql(
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_dispositivo_push_plataforma'"
+    ).scalar()
+    if definicion is not None and "'web'" not in definicion:
+        conexion.exec_driver_sql("ALTER TABLE dispositivo_push DROP CONSTRAINT ck_dispositivo_push_plataforma")
+        conexion.exec_driver_sql(
+            "ALTER TABLE dispositivo_push ADD CONSTRAINT ck_dispositivo_push_plataforma "
+            "CHECK (plataforma IN ('android', 'ios', 'web'))"
+        )
+
+
+def test_registrar_navegador_web_y_rechazar_plataforma_desconocida(
+    cliente, sesion, usuario, restriccion_plataforma_con_web
+):
+    respuesta = registrar(cliente, "token-web", plataforma="web")
+    assert respuesta.status_code == 200
+    assert respuesta.json()["resultado"]["plataforma"] == "web"
+    dispositivo = sesion.scalar(select(DispositivoPush).where(DispositivoPush.token_fcm == "token-web"))
+    assert dispositivo.plataforma == "web"
+    assert dispositivo.id_usuario == usuario.id
+
+    assert registrar(cliente, "token-pc", plataforma="windows").status_code == 422
+
+
 def test_eliminar_dispositivo_propio(cliente, sesion):
     registrar(cliente)
     respuesta = cliente.delete(f"{URL_DISPOSITIVOS}/token-a")

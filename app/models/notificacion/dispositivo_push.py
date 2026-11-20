@@ -8,12 +8,13 @@ from app.database.base import Base
 
 PLATAFORMA_ANDROID = "android"
 PLATAFORMA_IOS = "ios"
-PLATAFORMAS_PUSH = (PLATAFORMA_ANDROID, PLATAFORMA_IOS)
+PLATAFORMA_WEB = "web"
+PLATAFORMAS_PUSH = (PLATAFORMA_ANDROID, PLATAFORMA_IOS, PLATAFORMA_WEB)
 
 
 class DispositivoPush(Base):
     """
-    Dispositivo movil registrado para recibir notificaciones push por FCM.
+    Dispositivo (movil o navegador web) registrado para recibir notificaciones push por FCM.
     El token de FCM es unico: si otro usuario inicia sesion en el mismo telefono,
     el registro se reasigna a ese usuario. Al fallar un envio por token invalido
     el dispositivo se marca como inactivo.
@@ -22,7 +23,7 @@ class DispositivoPush(Base):
     __tablename__ = "dispositivo_push"
     __table_args__ = (
         CheckConstraint(
-            "plataforma IN ('android', 'ios')",
+            "plataforma IN ('android', 'ios', 'web')",
             name="ck_dispositivo_push_plataforma",
         ),
         Index("ix_dispositivo_push_usuario_activo", "id_usuario", "activo"),
