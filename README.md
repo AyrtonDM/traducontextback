@@ -1,406 +1,140 @@
-La forma de respuesta que devolvera 
-un mensaje y resultado ejemplo: 
+# traducontextback
 
-{
-  "mensaje": "Usuario obtenido correctamente",
-  "resultado": {
-    "id": 15,
-    "nombre": "Elizabeth",
-    "correo": "usuario@gmail.com"
-  }
-}
-# para ejecutar proyecto
-descargar python version 3.14
-luego py -3.14 -m venv venv
-activar el entorno virtual
+API de TraduContext (FastAPI + SQLAlchemy + Alembic + PostgreSQL). La consumen la web
+(`traducontextfront`) y la app móvil (`traducontextmovil`).
+
+Orden recomendado para levantar todo el sistema: **PostgreSQL → backend → web y/o móvil**.
+
+## Requisitos
+
+| Herramienta | Versión | Notas |
+|-------------|---------|-------|
+| Python | 3.12 | Es la versión del `venv` actual (torch, onnxruntime y fasttext tienen ruedas para ella). |
+| PostgreSQL | 14 o superior | Crear una base vacía (p. ej. `traducontext`). |
+| Espacio en disco | ~5 GB | torch y el modelo NLLB-200 (`facebook/nllb-200-distilled-600M`, ~2,5 GB), que se descarga de Hugging Face la primera vez que se usa. |
+
+## 1. Instalación
+
+```powershell
+cd traducontextback
+py -3.12 -m venv venv
 .\venv\Scripts\Activate
 pip install -r requirements.txt
-probar proyecto
-uvicorn app.main:app --reload
+```
 
-# Para realizar migraciones
-alembic revision --autogenerate -m "agregar telefono a usuario"
+## 2. Variables de entorno
+
+```powershell
+copy .env.example .env
+```
+
+| Variable | Obligatoria | Descripción |
+|----------|-------------|-------------|
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Sí | Conexión a PostgreSQL (p. ej. `localhost`, `5432`). |
+| `DB_ECHO` | Sí | `true` imprime el SQL en consola. |
+| `GMAIL_USUARIO`, `GMAIL_PASSWORD`, `GMAIL_REMITENTE` | Sí | Cuenta Gmail para los códigos de verificación y recuperación. `GMAIL_PASSWORD` es una **contraseña de aplicación** de Google (requiere verificación en dos pasos), no la contraseña normal. |
+| `OPENAI_API_KEY` | Sí (puede ir vacía) | Traducción con LLM, asistencia y transcripción con Whisper. Vacía: esas funciones fallan. |
+| `CLAVE_CIFRADO_TOKENS`, `GOOGLE_*`, `ZOOM_*` | No | Integraciones con Meet y Zoom. Sin ellas aparecen como «no configuradas». |
+| `FRONTEND_URL` | No | A dónde vuelve el navegador tras el OAuth de Meet/Zoom. Por defecto `http://localhost:4200`. |
+| `FIREBASE_CREDENCIALES` | No | Push (web y móvil). Ver el apartado 5. Vacía: las notificaciones solo se guardan en la base de datos. |
+
+**Nunca** se suben `.env` ni la carpeta `credenciales/` (están en `.gitignore`). En
+[`CREDENCIALES.md`](CREDENCIALES.md) se explica dónde obtener cada credencial del sistema
+(backend, web y móvil), dónde va y cómo circula.
+
+## 3. Base de datos
+
+Al arrancar, el backend crea las tablas que falten (`create_all`) y siembra los datos iniciales:
+roles (`ADMINISTRADOR`, `USUARIO`) y sus permisos, idiomas, contextos, tonos, variantes regionales
+y entornos.
+
+**Base nueva (primera vez):**
+
+```powershell
+uvicorn app.main:app --port 8000   # crea tablas y datos iniciales; luego Ctrl+C
+alembic stamp head                 # marca la base como migrada hasta la última versión
+```
+
+No ejecutes `alembic upgrade head` sobre una base vacía: la primera migración supone que las
+tablas base ya existen.
+
+**Base existente (al traer cambios de otros):**
+
+```powershell
 alembic upgrade head
+```
 
-app/
-??? api/
-??? core/
-??? database/
-??? models/
-??? schemas/
-??? seeds/
-??? services/
-??? utilities/
-??? __init__.py
-??? main.py
-
-# api/
-
-Contiene las rutas o endpoints de la API.
-
-Aqu� se define c�mo el frontend u otros clientes pueden comunicarse con el backend mediante HTTP.
-
-Contiene
-Routers de FastAPI.
-Endpoints.
-Par�metros recibidos por las rutas.
-Dependencias necesarias para las rutas.
-Respuestas HTTP.
-Ejemplos
-api/
-??? __init__.py
-??? autenticacion.py
-??? usuarios.py
-??? roles.py
-??? permisos.py
-
-Un archivo de esta carpeta puede contener endpoints como:
-
-POST /autenticacion/registrar
-POST /autenticacion/iniciar-sesion
-POST /autenticacion/verificar-codigo
-
-GET /usuarios
-GET /usuarios/{id}
-Importante
-
-La carpeta api no debe contener la l�gica de negocio compleja.
-
-La ruta debe encargarse principalmente de recibir la solicitud, llamar al servicio correspondiente y devolver la respuesta.
-
-Flujo:
-
-Frontend
-   ?
-API
-   ?
-Service
-   ?
-Database
-
-# core/
-
-Contiene la configuraci�n y componentes centrales del sistema.
-
-Son elementos utilizados por diferentes partes del backend y que forman parte de la configuraci�n general de la aplicaci�n.
-
-Contiene
-Configuraci�n mediante variables de entorno.
-Configuraciones generales de FastAPI.
-Configuraciones de seguridad.
-Configuraciones de autenticaci�n.
-Constantes globales relacionadas con la infraestructura.
-Dependencias centrales de la aplicaci�n.
-Ejemplos
-core/
-??? __init__.py
-??? configuracion.py
-??? seguridad.py
-??? excepciones.py
-
-Por ejemplo, configuracion.py puede encargarse de leer:
-
-.env
-    ?
-Configuracion
-    ?
-Aplicacion
-
-Aqu� tambi�n pueden ubicarse elementos relacionados con JWT, hashing o manejo general de excepciones si son utilizados por diferentes m�dulos.
-
-# database/
-
-Contiene todo lo relacionado con la conexi�n y acceso t�cnico a la base de datos.
-
-Contiene
-Conexi�n a PostgreSQL.
-Motor de SQLAlchemy.
-Sesiones de base de datos.
-Clase Base de SQLAlchemy.
-Dependencias para obtener una sesi�n.
-Configuraciones espec�ficas de la base de datos.
-Ejemplos
-database/
-??? __init__.py
-??? conexion.py
-??? base.py
+**Nueva migración tras cambiar un modelo:**
 
-La responsabilidad de esta carpeta es proporcionar la conexi�n:
+```powershell
+alembic revision --autogenerate -m "descripcion del cambio"
+alembic upgrade head
+```
 
-Aplicaci�n
-     ?
-database
-     ?
-SQLAlchemy
-     ?
-PostgreSQL
-Importante
+**Primer administrador:** regístrate desde la web o el móvil y luego, en PostgreSQL:
 
-Aqu� no se colocan las consultas espec�ficas de Usuario, Rol, Permiso, etc.
+```sql
+UPDATE usuario SET id_rol = (SELECT id FROM rol WHERE nombre = 'ADMINISTRADOR')
+WHERE correo = 'tu_correo@ejemplo.com';
+```
 
-La conexi�n pertenece a database.
+`tablas_bd.md` documenta todas las tablas y relaciones.
 
-Las operaciones espec�ficas sobre entidades deben estar en los servicios/repositorios que correspondan.
+## 4. Ejecutar
 
-# models/
+```powershell
+.\venv\Scripts\Activate
+uvicorn app.main:app --reload --port 8000
+```
 
-Contiene los modelos de SQLAlchemy que representan las tablas de la base de datos.
+- API: `http://127.0.0.1:8000/api/v1`. Documentación interactiva: `http://127.0.0.1:8000/docs`.
+- Así basta para la web y para el móvil por USB (`adb reverse`).
+- Para el móvil por Wi-Fi, el backend tiene que escuchar en toda la red:
+  `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`. Además hay que permitir el puerto 8000
+  en el firewall de Windows (red privada).
 
-Cada modelo representa una entidad persistente del sistema.
+## 5. Notificaciones push (opcional)
 
-Ejemplos
-models/
-??? __init__.py
-??? usuario.py
-??? rol.py
-??? permiso.py
-??? rol_permiso.py
-??? sesion.py
-??? token_verificacion.py
+1. Firebase Console → proyecto → Configuración → **Cuentas de servicio** → «Generar nueva clave privada».
+2. Guarda el JSON como `credenciales/firebase-adminsdk.json`.
+3. En `.env`: `FIREBASE_CREDENCIALES=credenciales/firebase-adminsdk.json` (la ruta es relativa a
+   la raíz del backend; también se acepta el JSON completo en una sola línea).
+4. Reinicia el backend.
 
-Por ejemplo:
+Los dispositivos se registran solos con `POST /api/v1/dispositivos` al iniciar sesión en la web o
+el móvil (tabla `dispositivo_push`). Los tokens que FCM rechaza se marcan como inactivos.
 
-Usuario
-Rol
-Permiso
-Sesion
-TokenVerificacion
+## Pruebas manuales
 
-Estos modelos definen:
+`pruebas/` contiene scripts sueltos para probar el detector de idioma, NLLB, el motor contextual
+y la traducción:
 
-Columnas.
-Tipos de datos.
-Claves primarias.
-Claves for�neas.
-Relaciones entre tablas.
-Restricciones relacionadas con la base de datos.
-Ejemplo conceptual
-models/usuario.py
-        ?
-Tabla usuario
-        ?
-PostgreSQL
+```powershell
+python -m pruebas.probar_nllb
+```
 
-Los modelos de esta carpeta son utilizados posteriormente por SQLAlchemy y Alembic.
+## Formato de respuesta
 
-# schemas/
+Todas las respuestas, incluidos los errores, tienen esta forma:
 
-Contiene los esquemas Pydantic utilizados para validar y estructurar los datos que entran y salen de la API.
+```json
+{ "mensaje": "Usuario obtenido correctamente", "resultado": { "id": 15, "nombre": "Elizabeth" } }
+```
 
-Los schemas no representan directamente tablas de la base de datos.
+## Estructura (`app/`)
 
-Su funci�n principal es definir la estructura de los datos de comunicaci�n.
+| Carpeta | Contenido |
+|---------|-----------|
+| `api/routes/` | Endpoints de FastAPI. Reciben la petición, llaman al servicio y devuelven la respuesta, sin lógica de negocio. `api/rutas.py` los reúne. |
+| `services/` | Lógica de negocio (autenticación, traducción, chats, documentos, notificaciones, push FCM...). |
+| `models/` | Modelos SQLAlchemy (tablas), agrupados por módulo. |
+| `schemas/` | Esquemas Pydantic de entrada y salida de la API (no son tablas). |
+| `database/` | Conexión, sesión, clase `Base` e inicialización (tablas + seeds). |
+| `seeds/` | Datos iniciales del sistema. Las migraciones cambian la estructura; los seeds insertan datos. |
+| `core/` | Configuración (`.env`), seguridad (hash de contraseñas, tokens de sesión, permisos) y cifrado Fernet. |
+| `constants/` | Constantes (p. ej. códigos de idioma NLLB). |
+| `models_ia/` | Modelo de detección de idioma (`lid.176.ftz`, fastText). |
+| `utilities/` | Funciones auxiliares reutilizables (correo, códigos...). |
+| `main.py` | Crea la app, CORS, rutas y `/documentos` (archivos subidos y traducidos, en `documentos/`, que no se versiona). |
 
-Ejemplos
-schemas/
-??? __init__.py
-??? usuario.py
-??? autenticacion.py
-??? sesion.py
-??? token_verificacion.py
-
-Podemos tener, por ejemplo:
-
-UsuarioCrear
-UsuarioRespuesta
-InicioSesion
-VerificarCodigo
-
-Conceptualmente:
-
-Frontend
-   ?
-Schema
-   ?
-Validaci�n
-   ?
-Service
-Diferencia entre models y schemas
-models/
-    Representan tablas de PostgreSQL.
-
-schemas/
-    Representan datos de entrada y salida de la API.
-
-No deben confundirse.
-
-# seeds/
-
-Contiene los datos iniciales que deben cargarse en la base de datos para que el sistema pueda funcionar correctamente.
-
-Los seeds se utilizan principalmente para datos predeterminados o iniciales, no para datos generados por los usuarios.
-
-Ejemplos
-seeds/
-??? __init__.py
-??? roles.py
-??? permisos.py
-??? datos_iniciales.py
-
-Por ejemplo, el sistema podr�a necesitar inicialmente:
-
-Roles:
-
-SUPERADMIN
-ADMIN
-USUARIO
-
-y permisos como:
-
-CREAR_USUARIO
-EDITAR_USUARIO
-ELIMINAR_USUARIO
-VER_USUARIOS
-
-Los seeds podr�an insertar esos datos cuando se prepara una base de datos nueva.
-
-Importante
-
-Los seeds no sustituyen a las migraciones de Alembic.
-
-La diferencia es:
-
-Alembic
-    ? modifica la estructura de la base de datos.
-
-Seeds
-    ? inserta datos iniciales.
-
-# services/
-
-Contiene la l�gica de negocio de la aplicaci�n.
-
-Esta es una de las carpetas m�s importantes del proyecto.
-
-Los servicios reciben una operaci�n que debe realizarse y coordinan las diferentes acciones necesarias para completarla.
-
-Ejemplos
-services/
-??? __init__.py
-??? autenticacion.py
-??? usuario.py
-??? correo.py
-??? sesion.py
-
-Por ejemplo, registrar un usuario podr�a requerir:
-
-Registrar usuario
-       ?
-Validar informaci�n
-       ?
-Comprobar que el correo no exista
-       ?
-Crear usuario
-       ?
-Generar c�digo
-       ?
-Guardar c�digo
-       ?
-Enviar correo
-
-Toda esa l�gica pertenece al servicio de autenticaci�n/usuario, no directamente a la ruta.
-
-Flujo recomendado
-API
- ?
-Service
- ?
-Models / Database
-
-Los servicios contienen las reglas que determinan qu� debe hacer el sistema.
-
-# utilities/
-
-Contiene funciones auxiliares y reutilizables que pueden ser utilizadas por diferentes m�dulos del sistema.
-
-Una utilidad debe realizar una tarea espec�fica y reutilizable, pero no deber�a contener l�gica de negocio propia de una funcionalidad.
-
-Ejemplos
-utilities/
-??? __init__.py
-??? correo.py
-??? codigo.py
-??? fechas.py
-??? validaciones.py
-
-Por ejemplo:
-
-correo.py
-
-Puede contener una funci�n gen�rica:
-
-enviar_correo()
-
-Esta funci�n puede utilizarse para:
-
-C�digo de verificaci�n
-Recuperaci�n de contrase�a
-Notificaciones
-Informaci�n
-Confirmaciones
-codigo.py
-
-Puede contener funciones para generar c�digos aleatorios:
-
-generar_codigo_verificacion()
-Diferencia entre services y utilities
-services/
-    Contiene l�gica de negocio.
-
-utilities/
-    Contiene herramientas reutilizables.
-
-Por ejemplo:
-
-services/autenticacion.py
-        ?
-generar c�digo
-        ?
-utilities/codigo.py
-
-y:
-
-services/autenticacion.py
-        ?
-enviar correo
-        ?
-utilities/correo.py
-
-La utilidad no necesita saber por qu� se est� enviando el correo.
-
-__init__.py
-
-Permite que Python trate la carpeta app como un paquete y facilita las importaciones entre m�dulos.
-
-Normalmente no debe contener l�gica de negocio.
-
-Tambi�n puede utilizarse posteriormente para exponer determinados elementos del paquete si fuera necesario.
-
-# main.py
-
-Es el punto de entrada principal de FastAPI.
-
-Aqu� se crea la aplicaci�n y se registran los routers principales.
-
-Conceptualmente:
-
-main.py
-   ?
-   ??? Crear aplicaci�n FastAPI
-   ??? Configuraci�n general
-   ??? Registrar routers
-   ??? Configuraciones globales
-
-Por ejemplo:
-
-main.py
-    ?
-FastAPI
-    ?
-api/autenticacion.py
-api/usuarios.py
-api/roles.py
-
-El archivo no deber�a contener toda la l�gica del sistema.
-
-Su funci�n principal es ensamblar la aplicaci�n.
+Flujo: `cliente → api/routes → services → models/database → PostgreSQL`.
