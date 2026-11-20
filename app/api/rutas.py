@@ -24,6 +24,7 @@ from app.api.routes.sesiones_externas import enrutador as enrutador_sesiones_ext
 from app.api.routes.dispositivos import enrutador as enrutador_dispositivos
 from app.api.routes.notificaciones import enrutador as enrutador_notificaciones
 from app.api.routes.chats import enrutador as enrutador_chats
+from app.api.routes.asistente_guia import enrutador as enrutador_asistente_guia
 
 enrutador = APIRouter()
 enrutador.include_router(enrutador_usuarios)
@@ -48,3 +49,4 @@ enrutador.include_router(enrutador_sesiones_externas)
 enrutador.include_router(enrutador_dispositivos)
 enrutador.include_router(enrutador_notificaciones)
 enrutador.include_router(enrutador_chats)
+enrutador.include_router(enrutador_asistente_guia)

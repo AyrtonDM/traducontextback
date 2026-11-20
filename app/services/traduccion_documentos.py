@@ -173,7 +173,7 @@ def traducir_archivo_docx(
 ) -> None:
     doc = docx.Document(ruta_entrada)
 
-    # Traducir p·rrafos
+    # Traducir p√°rrafos
     for p in doc.paragraphs:
         for run in p.runs:
             texto = run.text
